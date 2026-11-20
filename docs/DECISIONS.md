@@ -15,7 +15,6 @@
 - The "no raw colours" rule is a small script (`scripts/check-boundaries.mjs`), not an ESLint plugin: the client lints with oxlint, which has no rule for this. The same script also covers the Fake Store host, `server/` imports and `fetch(` outside `lib/api.ts` checks.
 - `client/src/data/sampleProducts.ts` still holds Fake Store URLs. The boundary check skips this one file until the client loads products from the API.
 - `client/src/lib/api.ts` does not exist yet; the boundary check already names it as the only place `fetch(` may appear.
-- Docker images were not built in the setup branch (no Docker daemon was available); `docker compose config` validates the file.
 
 ## Growth path
 
@@ -26,4 +25,4 @@
 ## Next steps
 
 - Feature issues: featured products, category listing, search, product page, enquiry flow.
-- Verify `docker compose up --build` end to end and record the time taken.
+- Record `docker compose up --build` time. Enquiry email landing in Mailpit is checked once the enquiry endpoint exists.
