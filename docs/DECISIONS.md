@@ -2,6 +2,7 @@
 
 ## Assumptions
 
+- Server layout and tooling follow `docs/ARCHITECTURE.md`. Its open decisions (section 14) are not settled yet and still need a line here each.
 - Setup issues come before feature issues, so `server/` has a health endpoint only. The config loader validates every setting `.env.example` lists, because Docker and the later providers need them.
 - The server runs TypeScript directly with `tsx` instead of a compile step: one less build stage for a small app. Revisit if start-up time or image size matters.
 - Docker Compose reads `.env.example` directly so `docker compose up` works with no setup. A `.env` file overrides it.
