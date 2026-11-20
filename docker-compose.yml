@@ -1,0 +1,20 @@
+services:
+  server:
+    build: ./server
+    env_file:
+      - .env.example
+      - path: .env
+        required: false
+    environment:
+      # Inside the compose network the catcher is reachable by service name.
+      SMTP_HOST: mailpit
+    depends_on: [mailpit]
+
+  client:
+    build: ./client
+    ports: ["8080:80"]
+    depends_on: [server]
+
+  mailpit:
+    image: axllent/mailpit:v1.21
+    ports: ["8025:8025"]

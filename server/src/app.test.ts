@@ -1,0 +1,29 @@
+import type { AddressInfo } from 'node:net'
+import { afterEach, describe, expect, it } from 'vitest'
+import { createApp } from './app.ts'
+
+const servers: Array<{ close: () => void }> = []
+afterEach(() => servers.splice(0).forEach((s) => s.close()))
+
+function start() {
+  const server = createApp({ CLIENT_ORIGIN: 'http://localhost:5173' }).listen(0)
+  servers.push(server)
+  return `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+}
+
+describe('GET /api/health', () => {
+  it('reports ok', async () => {
+    const res = await fetch(`${start()}/api/health`)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ status: 'ok' })
+  })
+
+  it('allows only the configured client origin', async () => {
+    const res = await fetch(`${start()}/api/health`)
+    expect(res.headers.get('access-control-allow-origin')).toBe('http://localhost:5173')
+  })
+
+  it('blocks requests to hosts other than localhost', async () => {
+    await expect(fetch('https://fakestoreapi.com/products')).rejects.toThrow(/Network blocked/)
+  })
+})
