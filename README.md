@@ -26,7 +26,7 @@ All settings come from environment variables and are listed in [.env.example](.e
 
 ## Develop without Docker
 
-Needs Node 20.
+Needs Node 22.
 
 ```sh
 npm run setup        # install server and client dependencies
