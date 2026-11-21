@@ -4,7 +4,7 @@ import { createApp } from '../app.ts'
 import { NotFoundError, UpstreamError } from '../domain/errors.ts'
 import type { Product } from '../domain/product.ts'
 import { createCatalogueService, type CatalogueService } from '../services/catalogue.ts'
-import { fakeProductProvider } from '../../test/helpers.ts'
+import { fakeProductProvider, noopEnquiry, testConfig } from '../../test/helpers.ts'
 
 const servers: Array<{ close: () => void }> = []
 afterEach(() => {
@@ -13,7 +13,7 @@ afterEach(() => {
 })
 
 function start(catalogue: CatalogueService) {
-  const server = createApp({ CLIENT_ORIGIN: 'http://localhost:5173' }, { catalogue }).listen(0)
+  const server = createApp(testConfig, { catalogue, enquiry: noopEnquiry }).listen(0)
   servers.push(server)
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`
 }

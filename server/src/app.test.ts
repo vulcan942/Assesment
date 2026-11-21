@@ -2,13 +2,13 @@ import type { AddressInfo } from 'node:net'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createApp } from './app.ts'
 import { createCatalogueService } from './services/catalogue.ts'
-import { fakeProductProvider } from '../test/helpers.ts'
+import { fakeProductProvider, noopEnquiry, testConfig } from '../test/helpers.ts'
 
 const servers: Array<{ close: () => void }> = []
 afterEach(() => servers.splice(0).forEach((s) => s.close()))
 
 function start() {
-  const server = createApp({ CLIENT_ORIGIN: 'http://localhost:5173' }, { catalogue: createCatalogueService({ provider: fakeProductProvider(), featuredIds: [] }) }).listen(0)
+  const server = createApp(testConfig, { catalogue: createCatalogueService({ provider: fakeProductProvider(), featuredIds: [] }), enquiry: noopEnquiry }).listen(0)
   servers.push(server)
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`
 }

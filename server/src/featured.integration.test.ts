@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp } from './app.ts'
 import type { Product } from './domain/product.ts'
 import { createCatalogueService } from './services/catalogue.ts'
-import { fakeProductProvider } from '../test/helpers.ts'
+import { fakeProductProvider, noopEnquiry, testConfig } from '../test/helpers.ts'
 
 const servers: Array<{ close: () => void }> = []
 afterEach(() => {
@@ -17,7 +17,7 @@ const full = (id: string): Product => ({
 
 async function getFeatured(featuredIds: string[]) {
   const catalogue = createCatalogueService({ provider: fakeProductProvider(['1', '2', '3', '4', '5', '6'].map(full)), featuredIds })
-  const server = createApp({ CLIENT_ORIGIN: 'http://localhost:5173' }, { catalogue }).listen(0)
+  const server = createApp(testConfig, { catalogue, enquiry: noopEnquiry }).listen(0)
   servers.push(server)
   return fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/api/products/featured`)
 }
