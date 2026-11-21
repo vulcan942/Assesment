@@ -52,28 +52,73 @@ describe('GET /api/categories', () => {
 
 describe('GET /api/categories/:category/products', () => {
   it('returns cards without rating or description, plus paging fields', async () => {
-    const base = start(stub({ getCategoryPage: async () => ({ topRated: [full], products: [{ ...full, id: '2' }, { ...full, id: '3' }] }) }))
-    const res = await fetch(`${base}/api/categories/men/products`)
+    const getCategoryPage: CatalogueService['getCategoryPage'] = async (_c, paging) => ({
+      topRated: [full],
+      products: [{ ...full, id: '2' }, { ...full, id: '3' }],
+      total: 2,
+      ...paging,
+    })
+    const res = await fetch(`${start(stub({ getCategoryPage }))}/api/categories/men/products`)
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({
       topRated: [card],
       products: [{ ...card, id: '2' }, { ...card, id: '3' }],
       page: 1,
-      pageSize: 2,
+      pageSize: 12,
       total: 2,
     })
   })
 
-  it('passes the decoded category to the service', async () => {
-    const getCategoryPage = vi.fn(async (_category: string) => ({ topRated: [], products: [] }))
+  it('passes the decoded category and default paging to the service', async () => {
+    const getCategoryPage = vi.fn<CatalogueService['getCategoryPage']>(async (_c, paging) => ({ topRated: [], products: [], total: 0, ...paging }))
     await fetch(`${start(stub({ getCategoryPage }))}/api/categories/women%20clothing/products`)
-    expect(getCategoryPage).toHaveBeenCalledWith('women clothing')
+    expect(getCategoryPage).toHaveBeenCalledWith('women clothing', { page: 1, pageSize: 12 })
   })
 
-  it('ignores page and pageSize query params', async () => {
-    const base = start(stub({ getCategoryPage: async () => ({ topRated: [], products: [full] }) }))
-    const body = await (await fetch(`${base}/api/categories/men/products?page=5&pageSize=1`)).json()
-    expect(body).toMatchObject({ page: 1, pageSize: 1, total: 1 })
+  it('passes a custom page and pageSize to the service and echoes them', async () => {
+    const getCategoryPage = vi.fn<CatalogueService['getCategoryPage']>(async (_c, paging) => ({ topRated: [], products: [full], total: 40, ...paging }))
+    const body = await (await fetch(`${start(stub({ getCategoryPage }))}/api/categories/men/products?page=5&pageSize=7`)).json()
+    expect(getCategoryPage).toHaveBeenCalledWith('men', { page: 5, pageSize: 7 })
+    expect(body).toMatchObject({ page: 5, pageSize: 7, total: 40 })
+  })
+
+  const pageError = { page: 'Use a whole number from 1.' }
+  const sizeError = { pageSize: 'Use a whole number from 1 to 50.' }
+  const invalid = (fields: object) => ({
+    error: { code: 'validation_failed', message: 'Check the highlighted fields.', fields },
+  })
+
+  it.each(['0', '-1', 'abc', '1.5', '1e1', '0x10', '%201', '1%20', '', '1.0', '99999999999999999999999'])(
+    'returns 400 for page=%s',
+    async (value) => {
+      const res = await fetch(`${start(stub({}))}/api/categories/men/products?page=${value}`)
+      expect(res.status).toBe(400)
+      expect(await res.json()).toEqual(invalid(pageError))
+    },
+  )
+
+  it.each(['0', '51', '-1', 'abc', '1e1', ''])('returns 400 for pageSize=%s', async (value) => {
+    const res = await fetch(`${start(stub({}))}/api/categories/men/products?pageSize=${value}`)
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual(invalid(sizeError))
+  })
+
+  it('returns 400 for a repeated page param', async () => {
+    const res = await fetch(`${start(stub({}))}/api/categories/men/products?page=1&page=2`)
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual(invalid(pageError))
+  })
+
+  it('reports page and pageSize errors together', async () => {
+    const res = await fetch(`${start(stub({}))}/api/categories/men/products?page=0&pageSize=99`)
+    expect(await res.json()).toEqual(invalid({ ...pageError, ...sizeError }))
+  })
+
+  it('accepts pageSize 1 and 50', async () => {
+    const getCategoryPage = vi.fn<CatalogueService['getCategoryPage']>(async (_c, paging) => ({ topRated: [], products: [], total: 0, ...paging }))
+    const base = start(stub({ getCategoryPage }))
+    expect((await fetch(`${base}/api/categories/men/products?pageSize=1`)).status).toBe(200)
+    expect((await fetch(`${base}/api/categories/men/products?pageSize=50`)).status).toBe(200)
   })
 
   it('returns 404 with the shared error shape for an unknown category', async () => {
@@ -159,5 +204,22 @@ describe('category endpoints with the real service and a fake provider', () => {
   it('returns 404 for an unknown category', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     expect((await fetch(`${real()}/api/categories/toys/products`)).status).toBe(404)
+  })
+
+  it('returns 404 for an unknown category on page 2', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect((await fetch(`${real()}/api/categories/toys/products?page=2`)).status).toBe(404)
+  })
+
+  it('returns page 2 with no top rated and the next products', async () => {
+    const body = (await (await fetch(`${real()}/api/categories/men/products?page=2&pageSize=1`)).json()) as Body
+    expect(body).toMatchObject({ topRated: [], page: 2, pageSize: 1, total: 2 })
+    expect(body.products.map((p) => p.id)).toEqual(['1'])
+  })
+
+  it('returns 200 with empty products and the real total past the end', async () => {
+    const res = await fetch(`${real()}/api/categories/men/products?page=9`)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ topRated: [], products: [], page: 9, pageSize: 12, total: 2 })
   })
 })

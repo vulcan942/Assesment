@@ -3,12 +3,24 @@ import type { Product, ProductProvider } from '../domain/product.ts'
 
 const TOP_RATED_COUNT = 3
 
+export interface PageRequest {
+  page: number
+  pageSize: number
+}
+
 export interface CatalogueService {
   getFeatured(): Promise<Product[]>
   listCategories(): Promise<string[]>
-  getCategoryPage(category: string): Promise<{ topRated: Product[]; products: Product[] }>
-  search(term: string): Promise<Product[]>
+  getCategoryPage(
+    category: string,
+    paging: PageRequest,
+  ): Promise<PageRequest & { topRated: Product[]; products: Product[]; total: number }>
+  search(term: string, paging: PageRequest): Promise<PageRequest & { products: Product[]; total: number }>
   getProduct(id: string): Promise<Product>
+}
+
+function paginate<T>(items: T[], page: number, pageSize: number) {
+  return { items: items.slice((page - 1) * pageSize, page * pageSize), page, pageSize, total: items.length }
 }
 
 // Rating descending, unrated last, ties by id (numeric-aware so "2" sorts before "10").
@@ -33,11 +45,13 @@ export function createCatalogueService(deps: { provider: ProductProvider; featur
     listCategories: () => deps.provider.listCategories(),
 
     // Literal substring match (no regex) so characters like "(" or ".*" are safe. Provider order, no ranking.
-    async search(term) {
+    async search(term, { page, pageSize }) {
       const needle = term.toLowerCase()
-      return (await deps.provider.list()).filter(
+      const matches = (await deps.provider.list()).filter(
         (p) => p.title.toLowerCase().includes(needle) || (p.description ?? '').toLowerCase().includes(needle),
       )
+      const { items, total } = paginate(matches, page, pageSize)
+      return { products: items, page, pageSize, total }
     },
 
     async getProduct(id) {
@@ -46,11 +60,13 @@ export function createCatalogueService(deps: { provider: ProductProvider; featur
       return product
     },
 
-    async getCategoryPage(category) {
+    async getCategoryPage(category, { page, pageSize }) {
       const categories = await deps.provider.listCategories()
       if (!categories.includes(category)) throw new NotFoundError(`Unknown category "${category}"`)
       const sorted = (await deps.provider.list()).filter((p) => p.category === category).sort(byRanking)
-      return { topRated: sorted.slice(0, TOP_RATED_COUNT), products: sorted.slice(TOP_RATED_COUNT) }
+      const { items, total } = paginate(sorted.slice(TOP_RATED_COUNT), page, pageSize)
+      // Top rated shows on page 1 only; repeating it on every page is noise.
+      return { topRated: page === 1 ? sorted.slice(0, TOP_RATED_COUNT) : [], products: items, page, pageSize, total }
     },
   }
 }
