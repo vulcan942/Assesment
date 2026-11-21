@@ -84,7 +84,7 @@ describe('GET /api/products (search)', () => {
     expect(await res.json()).toEqual({
       products: [{ id: '1', title: 'Red Shirt', price: 9.5, image: 'i.png', category: 'men' }],
       page: 1,
-      pageSize: 1,
+      pageSize: 12,
       total: 1,
     })
   })
@@ -92,7 +92,64 @@ describe('GET /api/products (search)', () => {
   it('returns 200 with an empty list when nothing matches', async () => {
     const res = await fetch(`${withProducts()}/api/products?q=zzz`)
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ products: [], page: 1, pageSize: 0, total: 0 })
+    expect(await res.json()).toEqual({ products: [], page: 1, pageSize: 12, total: 0 })
+  })
+
+  it('pages the matches and echoes page, pageSize and the match count', async () => {
+    const body = await (await fetch(`${withProducts()}/api/products?q=h&page=2&pageSize=1`)).json()
+    expect(body).toEqual({ products: [{ id: '2', title: 'Hat', price: 9.5, image: 'i.png', category: 'men' }], page: 2, pageSize: 1, total: 2 })
+  })
+
+  it('returns 200 with empty products and the real total past the end', async () => {
+    const body = await (await fetch(`${withProducts()}/api/products?q=shirt&page=5`)).json()
+    expect(body).toEqual({ products: [], page: 5, pageSize: 12, total: 1 })
+  })
+
+  it('accepts the maximum page of 1000000 and returns empty products', async () => {
+    const body = await (await fetch(`${withProducts()}/api/products?q=shirt&page=1000000`)).json()
+    expect(body).toEqual({ products: [], page: 1000000, pageSize: 12, total: 1 })
+  })
+
+  it('passes a custom page and pageSize to the service', async () => {
+    const search = vi.fn<CatalogueService['search']>(async (_t, paging) => ({ products: [], total: 0, ...paging }))
+    await fetch(`${start(stub({ search }))}/api/products?q=hat&page=3&pageSize=7`)
+    expect(search).toHaveBeenCalledWith('hat', { page: 3, pageSize: 7 })
+  })
+
+  const pageError = 'Use a whole number from 1 to 1000000.'
+  const sizeError = 'Use a whole number from 1 to 50.'
+
+  it.each(['0', '-1', 'abc', '1.5', '1e1', '0x10', '%201', '1000001', ''])('returns 400 for page=%s', async (value) => {
+    const res = await fetch(`${withProducts()}/api/products?q=hat&page=${value}`)
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({
+      error: { code: 'validation_failed', message: 'Check the highlighted fields.', fields: { page: pageError } },
+    })
+  })
+
+  it.each(['0', '51', 'abc', '1e1', ''])('returns 400 for pageSize=%s', async (value) => {
+    const res = await fetch(`${withProducts()}/api/products?q=hat&pageSize=${value}`)
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({
+      error: { code: 'validation_failed', message: 'Check the highlighted fields.', fields: { pageSize: sizeError } },
+    })
+  })
+
+  it('returns 400 for a repeated page param', async () => {
+    const res = await fetch(`${withProducts()}/api/products?q=hat&page=1&page=2`)
+    expect(res.status).toBe(400)
+  })
+
+  it('merges q and page errors into one fields object', async () => {
+    const res = await fetch(`${withProducts()}/api/products?q=&page=0&pageSize=99`)
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({
+      error: {
+        code: 'validation_failed',
+        message: 'Check the highlighted fields.',
+        fields: { q: 'Enter a word to search for.', page: pageError, pageSize: sizeError },
+      },
+    })
   })
 
   it('returns 400 with fields.q when q is missing', async () => {
@@ -125,9 +182,9 @@ describe('GET /api/products (search)', () => {
   })
 
   it('trims and collapses spaces in q before searching', async () => {
-    const search = vi.fn(async () => [])
+    const search = vi.fn<CatalogueService['search']>(async (_t, paging) => ({ products: [], total: 0, ...paging }))
     await fetch(`${start(stub({ search }))}/api/products?q=%20%20red%20%20%20shirt%20`)
-    expect(search).toHaveBeenCalledWith('red shirt')
+    expect(search).toHaveBeenCalledWith('red shirt', { page: 1, pageSize: 12 })
   })
 
   describe('with a fake provider', () => {

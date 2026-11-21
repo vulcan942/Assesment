@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { ValidationError } from '../domain/errors.ts'
 import type { CatalogueService } from '../services/catalogue.ts'
-import { idSchema } from './schemas.ts'
+import { idSchema, parsePaging } from './schemas.ts'
 import { toCard, toDetail } from './wire.ts'
 
 const MAX_QUERY = 100
@@ -24,12 +24,14 @@ export function productsRouter(catalogue: CatalogueService) {
   router.get('/products', async (req, res) => {
     // A repeated ?q=a&q=b arrives as an array and fails the string check, so it is a 400, not a 500.
     const parsed = querySchema.safeParse(req.query.q)
+    const { paging, fields } = parsePaging(req.query)
     if (!parsed.success) {
       const tooLong = parsed.error.issues.some((i) => i.code === 'too_big')
-      throw new ValidationError({ q: tooLong ? `Use ${MAX_QUERY} characters or fewer.` : 'Enter a word to search for.' })
+      fields.q = tooLong ? `Use ${MAX_QUERY} characters or fewer.` : 'Enter a word to search for.'
     }
-    const products = await catalogue.search(parsed.data)
-    res.json({ products: products.map(toCard), page: 1, pageSize: products.length, total: products.length })
+    if (!parsed.success || !paging) throw new ValidationError(fields)
+    const result = await catalogue.search(parsed.data, paging)
+    res.json({ ...result, products: result.products.map(toCard) })
   })
 
   // Registered last so "featured" is never read as an id.

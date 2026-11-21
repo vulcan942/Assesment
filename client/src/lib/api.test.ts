@@ -60,6 +60,20 @@ describe('api', () => {
     expect(fn.mock.calls[0][0]).toBe('/api/products?q=men+%26+women%2Fshirt')
   })
 
+  it('sends the page only after page 1', async () => {
+    const fn = stubFetch(async () => json({ products: [], page: 1, pageSize: 12, total: 0 }))
+    await searchProducts('shirt', 1)
+    await searchProducts('shirt', 3)
+    await getCategoryPage('toys', 1)
+    await getCategoryPage('toys', 2)
+    expect(fn.mock.calls.map((c) => c[0])).toEqual([
+      '/api/products?q=shirt',
+      '/api/products?q=shirt&page=3',
+      '/api/categories/toys/products',
+      '/api/categories/toys/products?page=2',
+    ])
+  })
+
   it('encodes the category path segment', async () => {
     const fn = stubFetch(async () => json({ topRated: [], products: [], page: 1, pageSize: 20, total: 0 }))
     await getCategoryPage("men's clothing")

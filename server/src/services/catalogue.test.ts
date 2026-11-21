@@ -50,8 +50,8 @@ describe('getProduct', () => {
 })
 
 const rated = (id: string, rating?: number, category = 'men'): Product => ({ id, title: `Product ${id}`, category, rating })
-const page = (products: Product[], category = 'men') =>
-  createCatalogueService({ provider: fakeProductProvider(products), featuredIds: [] }).getCategoryPage(category)
+const page = (products: Product[], category = 'men', paging = { page: 1, pageSize: 12 }) =>
+  createCatalogueService({ provider: fakeProductProvider(products), featuredIds: [] }).getCategoryPage(category, paging)
 const ids = (products: Product[]) => products.map((x) => x.id)
 
 describe('getCategoryPage', () => {
@@ -101,13 +101,79 @@ describe('getCategoryPage', () => {
   it('returns empty lists for a known category with no products', async () => {
     const provider = { ...fakeProductProvider([]), listCategories: async () => ['men'] }
     const svc = createCatalogueService({ provider, featuredIds: [] })
-    expect(await svc.getCategoryPage('men')).toEqual({ topRated: [], products: [] })
+    expect(await svc.getCategoryPage('men', { page: 1, pageSize: 12 })).toEqual({
+      topRated: [],
+      products: [],
+      page: 1,
+      pageSize: 12,
+      total: 0,
+    })
+  })
+})
+
+describe('getCategoryPage paging', () => {
+  // ratings 10..1 give ids 'n' with rating n; ranking order is 10,9,...,1; top three are 10,9,8; remainder is 7..1 (7 items)
+  const ten = Array.from({ length: 10 }, (_, i) => rated(String(10 - i), 10 - i))
+
+  it('returns the first page of the remainder with top rated and the remainder total', async () => {
+    const r = await page(ten, 'men', { page: 1, pageSize: 3 })
+    expect(ids(r.topRated)).toEqual(['10', '9', '8'])
+    expect(ids(r.products)).toEqual(['7', '6', '5'])
+    expect(r).toMatchObject({ page: 1, pageSize: 3, total: 7 })
+  })
+
+  it('returns a middle page with no top rated', async () => {
+    const r = await page(ten, 'men', { page: 2, pageSize: 3 })
+    expect(r.topRated).toEqual([])
+    expect(ids(r.products)).toEqual(['4', '3', '2'])
+  })
+
+  it('returns a shorter last page and echoes the requested page size', async () => {
+    const r = await page(ten, 'men', { page: 3, pageSize: 3 })
+    expect(ids(r.products)).toEqual(['1'])
+    expect(r).toMatchObject({ page: 3, pageSize: 3, total: 7 })
+  })
+
+  it('returns empty products and the real total when the page is past the end', async () => {
+    const r = await page(ten, 'men', { page: 9, pageSize: 3 })
+    expect(r.products).toEqual([])
+    expect(r.total).toBe(7)
+  })
+
+  it('fits the remainder on one page when it equals the page size', async () => {
+    const r = await page(ten, 'men', { page: 1, pageSize: 7 })
+    expect(r.products).toHaveLength(7)
+    expect((await page(ten, 'men', { page: 2, pageSize: 7 })).products).toEqual([])
+  })
+
+  it('returns empty top rated and products on page 2 for a category with three or fewer products', async () => {
+    const r = await page([rated('1', 1), rated('2', 2)], 'men', { page: 2, pageSize: 12 })
+    expect(r).toMatchObject({ topRated: [], products: [], total: 0 })
+  })
+
+  it('keeps tie order by id across pages', async () => {
+    const tied = ['10', '2', '1', '4', '3', '5'].map((id) => rated(id, 4))
+    const first = await page(tied, 'men', { page: 1, pageSize: 2 })
+    const second = await page(tied, 'men', { page: 2, pageSize: 2 })
+    expect([...ids(first.topRated), ...ids(first.products), ...ids(second.products)]).toEqual(['1', '2', '3', '4', '5', '10'])
+  })
+
+  it('never repeats a product between pages or with top rated', async () => {
+    const seen = [...ids((await page(ten, 'men', { page: 1, pageSize: 2 })).topRated)]
+    for (const n of [1, 2, 3, 4]) seen.push(...ids((await page(ten, 'men', { page: n, pageSize: 2 })).products))
+    expect(new Set(seen).size).toBe(10)
+    expect(seen).toHaveLength(10)
+  })
+
+  it('throws NotFoundError for an unknown category on page 2', async () => {
+    await expect(page(ten, 'toys', { page: 2, pageSize: 3 })).rejects.toBeInstanceOf(NotFoundError)
   })
 })
 
 const item = (id: string, title: string, description?: string): Product => ({ id, title, description })
-const search = (products: Product[], term: string) =>
-  createCatalogueService({ provider: fakeProductProvider(products), featuredIds: [] }).search(term)
+const search = async (products: Product[], term: string) =>
+  (await createCatalogueService({ provider: fakeProductProvider(products), featuredIds: [] }).search(term, { page: 1, pageSize: 50 }))
+    .products
 
 describe('search', () => {
   it('matches the title', async () => {
@@ -142,7 +208,40 @@ describe('search', () => {
 
   it('propagates an upstream error', async () => {
     const svc = createCatalogueService({ provider: fakeProductProvider([], new UpstreamError('down')), featuredIds: [] })
-    await expect(svc.search('x')).rejects.toBeInstanceOf(UpstreamError)
+    await expect(svc.search('x', { page: 1, pageSize: 12 })).rejects.toBeInstanceOf(UpstreamError)
+  })
+})
+
+describe('search paging', () => {
+  const hats = ['1', '2', '3', '4', '5'].map((id) => item(id, 'a hat'))
+  const run = (paging: { page: number; pageSize: number }, list = hats) =>
+    createCatalogueService({ provider: fakeProductProvider(list), featuredIds: [] }).search('hat', paging)
+
+  it('returns the first page in provider order with the match count as total', async () => {
+    const r = await run({ page: 1, pageSize: 2 })
+    expect(ids(r.products)).toEqual(['1', '2'])
+    expect(r).toMatchObject({ page: 1, pageSize: 2, total: 5 })
+  })
+
+  it('returns a middle page', async () => {
+    expect(ids((await run({ page: 2, pageSize: 2 })).products)).toEqual(['3', '4'])
+  })
+
+  it('returns a shorter last page', async () => {
+    expect(ids((await run({ page: 3, pageSize: 2 })).products)).toEqual(['5'])
+  })
+
+  it('returns empty products and the real total past the end', async () => {
+    const r = await run({ page: 4, pageSize: 2 })
+    expect(r).toMatchObject({ products: [], total: 5 })
+  })
+
+  it('returns everything on one page when the matches equal the page size', async () => {
+    expect((await run({ page: 1, pageSize: 5 })).products).toHaveLength(5)
+  })
+
+  it('returns zero total and no products when nothing matches', async () => {
+    expect(await run({ page: 1, pageSize: 12 }, [item('1', 'Shirt')])).toEqual({ products: [], page: 1, pageSize: 12, total: 0 })
   })
 })
 
@@ -150,5 +249,40 @@ describe('listCategories', () => {
   it('passes through the provider categories', async () => {
     const provider = fakeProductProvider([rated('1', 1, 'men'), rated('2', 1, 'women')])
     expect(await createCatalogueService({ provider, featuredIds: [] }).listCategories()).toEqual(['men', 'women'])
+  })
+})
+
+describe('default page size boundaries (12)', () => {
+  const size = { page: 1, pageSize: 12 }
+  const hats = (n: number) => Array.from({ length: n }, (_, i) => item(String(i + 1), 'a hat'))
+  const search = (n: number, page: number) =>
+    createCatalogueService({ provider: fakeProductProvider(hats(n)), featuredIds: [] }).search('hat', { ...size, page })
+  // rating n for id n: ranking runs n..1, the top three are the highest ids, the remainder is n - 3
+  const category = (n: number, p: number) =>
+    page(Array.from({ length: n }, (_, i) => rated(String(i + 1), i + 1)), 'men', { ...size, page: p })
+
+  it('search with exactly 12 matches fills page 1 and leaves page 2 empty', async () => {
+    expect((await search(12, 1)).products).toHaveLength(12)
+    expect(await search(12, 2)).toMatchObject({ products: [], total: 12 })
+  })
+
+  it('search with 13 matches puts the thirteenth on page 2', async () => {
+    expect((await search(13, 1)).products).toHaveLength(12)
+    expect(ids((await search(13, 2)).products)).toEqual(['13'])
+  })
+
+  it('category with 13 products shows 10 after the top three, all on page 1', async () => {
+    const r = await category(13, 1)
+    expect(r.topRated).toHaveLength(3)
+    expect(r.products).toHaveLength(10)
+    expect(r.total).toBe(10)
+  })
+
+  it('category with 15 products fits the remainder of 12 on one page', async () => {
+    expect(await category(15, 2)).toMatchObject({ products: [], total: 12 })
+  })
+
+  it('category with 16 products spills the lowest ranked product to page 2', async () => {
+    expect(ids((await category(16, 2)).products)).toEqual(['1'])
   })
 })
