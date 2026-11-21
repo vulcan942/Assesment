@@ -5,3 +5,21 @@ export class UpstreamError extends Error {
     this.name = 'UpstreamError'
   }
 }
+
+// Requested thing does not exist. Message is for logs only.
+export class NotFoundError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'NotFoundError'
+  }
+}
+
+// Request input failed validation. `fields` maps field name to a message safe to show the customer.
+export class ValidationError extends Error {
+  readonly fields: Record<string, string>
+  constructor(fields: Record<string, string>) {
+    super('Validation failed')
+    this.fields = fields
+    this.name = 'ValidationError'
+  }
+}

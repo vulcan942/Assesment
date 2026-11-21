@@ -1,7 +1,19 @@
+import { NotFoundError } from '../domain/errors.ts'
 import type { Product, ProductProvider } from '../domain/product.ts'
+
+const TOP_RATED_COUNT = 3
 
 export interface CatalogueService {
   getFeatured(): Promise<Product[]>
+  listCategories(): Promise<string[]>
+  getCategoryPage(category: string): Promise<{ topRated: Product[]; products: Product[] }>
+}
+
+// Rating descending, unrated last, ties by id (numeric-aware so "2" sorts before "10").
+function byRanking(a: Product, b: Product): number {
+  const diff = (b.rating ?? -Infinity) - (a.rating ?? -Infinity)
+  if (diff !== 0 && !Number.isNaN(diff)) return diff
+  return a.id.localeCompare(b.id, undefined, { numeric: true })
 }
 
 export function createCatalogueService(deps: { provider: ProductProvider; featuredIds: string[] }): CatalogueService {
@@ -14,6 +26,15 @@ export function createCatalogueService(deps: { provider: ProductProvider; featur
         else console.warn(`Featured product ${deps.featuredIds[i]} not found, skipping`)
       })
       return featured
+    },
+
+    listCategories: () => deps.provider.listCategories(),
+
+    async getCategoryPage(category) {
+      const categories = await deps.provider.listCategories()
+      if (!categories.includes(category)) throw new NotFoundError(`Unknown category "${category}"`)
+      const sorted = (await deps.provider.list()).filter((p) => p.category === category).sort(byRanking)
+      return { topRated: sorted.slice(0, TOP_RATED_COUNT), products: sorted.slice(TOP_RATED_COUNT) }
     },
   }
 }
