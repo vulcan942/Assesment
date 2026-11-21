@@ -48,6 +48,17 @@
 - #14 shared link classes and breakpoint tokens are repeated in three places and intentionally not extracted yet. Revisit if a fourth appears.
 - #14 the home page has no `h1`. This is a pre-existing gap from #13, to be settled; see `docs/design.md`.
 - #14 bug fixed: in Tailwind v4, `outline-none` plus `outline-2` hid the focus ring on `Button`, `Input`, `Textarea` and `Toggle` since the first issues. Fixed with `focus-visible:outline-solid`.
+- Search (#15): the term is trimmed, runs of whitespace collapse to one space, and the maximum is 100 characters after trimming (over the limit is a 400, not a silent cut). Matching is one case-insensitive plain substring of the whole term (`toLowerCase().includes`, no regex, so no injection and no escaping). Multi-word terms are not split: "red shirt" matches only text containing "red shirt". No accent folding.
+- Search (#15): it matches `title` and `description` only, not category. The service reads `description` from the internal product, even though the list wire shape omits it.
+- Search (#15): `q` missing, empty or whitespace-only on `GET /products` returns `400 validation_failed` with `fields.q` (the shared validation shape, ARCHITECTURE section 6) holding a message the client can show. `bad_request` stays only for unreadable requests (bad percent-encoding, malformed JSON). There is no "list all" mode. The client also blocks an empty submit with an inline message and makes no request.
+- Search (#15): results keep provider order, not rating order (no brief requirement). Like #14, the response keeps `{ products, page, pageSize, total }` but returns all matches with `page: 1`, `pageSize` equal to `products.length`; `page` and `pageSize` params are ignored until #18.
+- Search (#15): the client route is `/search?q=`. The search bar sits in the header on every page, wraps under the logo and nav on narrow screens, and shows the current term on the results page. No matches shows "No products match "term". Try a different word or browse a category."
+- Search (#15): no suggestions, debounce or live search; it runs only on submit, per the acceptance criteria.
+- Search (#15): each search calls `provider.list()` once per request upstream (about 20 items). There is no caching. Upgrade path: a short TTL cache in the service.
+- Search (#15): the search field has `maxLength` 100 and the client only trims; the server collapses runs of whitespace.
+- Search (#15): the results `h1` shows the term as typed.
+- Search (#15): a 400 with `fields.q` shows a destructive Alert titled 'Search did not run' with the server's `q` message. Any other error, and a 400 without `fields.q`, keeps the generic 'Products did not load'.
+- Search (#15): the `renderTitle` helper is now repeated in the Home, Category and Search pages (3 times). Not extracted yet; revisit at the next use.
 
 ## Dropped or simplified
 

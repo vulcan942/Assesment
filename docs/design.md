@@ -2,13 +2,13 @@
 
 UI design for the catalogue PoC. Built only from `design-system/` components and the rulings in `docs/design-gaps.md`. Token names only; no raw colours, sizes or fonts.
 
-Scope of this version: **issue 13 (home, featured products)** and **issue 14 (category nav and category page)**. Other screens are added by later issues.
+Scope of this version: **issue 13 (home, featured products)**, **issue 14 (category nav and category page)** and **issue 15 (search bar and results page)**. Other screens are added by later issues.
 
 | Screen | Route | Status |
 | --- | --- | --- |
 | Home | `/` | Designed below |
 | Category | `/categories/:category` | Designed below |
-| Search results | `/search?q=` | Later issue |
+| Search results | `/search?q=` | Designed below (with the search bar) |
 | Product detail | `/products/:id` | Later issue (placeholder route until then) |
 | Enquiry form and thank-you | on product detail | Later issue |
 
@@ -21,13 +21,14 @@ RootLayout (router root element)
       inner row (container classes)
         Link to="/"  "Catalogue"              t-heading-sm, ink
         CategoryNav                           see "Category nav" below
+        SearchBar                             see "Search bar" below; below 960px on its own row under the nav
   main (container classes)
     <Outlet />                                the page
 ```
 
 - Container classes (one shared string, per design-gaps): centred, max width `container-max`, horizontal padding `space-4` below 600px and `space-6` from 600px. The header inner row and `main` use the same string so the brand aligns with content.
 - `main` vertical padding: `space-6` top and bottom below 960px, `space-8` from 960px.
-- Brand link: at least `touch-target` tall, 2px `focus` outline with 2px offset, no underline change on hover beyond `accent` text. Text is "Catalogue". No logo. Category nav is added in issue 14; search comes with its own issue.
+- Brand link: at least `touch-target` tall, 2px `focus` outline with 2px offset, no underline change on hover beyond `accent` text. Text is "Catalogue". No logo. The category nav (issue 14) and search bar (issue 15) are the other two header children.
 - Page background `surface`.
 
 ## Home
@@ -264,6 +265,154 @@ Breakpoints: 600px and 960px only. Column count comes from `card-min`, not a bre
 | Empty body | No products in this category yet. Try another category. |
 | Unknown title | Category not found |
 | Unknown body | We could not find that category. Choose one from the menu. |
+
+## Search bar
+
+`SearchBar` (app-level, `client/src/components/`, ruled in design-gaps issue 15). Third child of `SiteHeader`, on every page. Home and category pages do not get a second one. It never calls the API: it navigates to `/search?q=` and the results page fetches.
+
+### Component tree
+
+```
+SearchBar(defaultValue?, className?)
+  form role="search" noValidate
+    div (row: field + button, gap space-2)
+      Label htmlFor=id                       "Search products"   sr-only, t-label
+      Input id type="search" name="q"        placeholder "Search products", maxLength=100,
+                                             aria-invalid + aria-describedby only while the error shows
+      Button variant="primary" type="submit" "Search"
+    [error only] p id role="alert"           inline alert glyph + "Enter a word to search for."
+```
+
+- `Label` is a real `<label>` bound to the field and visually hidden: the `search` landmark and the adjacent "Search" button make the purpose visible. Never placeholder-only.
+- Placeholder "Search products" repeats the label in `ink-muted` (holds 4.5:1 on `surface`); it vanishes on typing and is not relied on for the name.
+- `Input`: at least `touch-target` (44px) tall, text `t-body` (16px, so mobile browsers do not zoom), `surface` fill, `border-control` border, `radius-md`, `space-3` padding. `Button` primary: at least `touch-target` tall, `t-label`, `accent` fill with `on-accent` text, `accent-hover` on hover, `radius-md`. Field takes the remaining row width; button is its natural width.
+- Focus: 2px `focus` outline with 2px offset on both the field and the button, never removed. Field border stays `border-control` (3:1) when not focused.
+- Native `type="search"` clear control may show; it is not restyled and not relied on. The form is `noValidate` so the browser's own bubble never replaces our message.
+
+### Showing the current term
+
+- On `/search`, `SiteHeader` reads `q` with `useSearchParams` and passes it as `defaultValue` (trimmed). The bar is keyed on the term, so a new search resets the field to the new term.
+- On every other page the term is empty and the field is blank.
+- The field is uncontrolled beyond that: what the user types is not synced to the URL until submit.
+
+### States
+
+| State | What the user sees |
+| --- | --- |
+| Idle | Label (sr-only), empty or prefilled field, "Search" button. |
+| Empty or whitespace-only submit | No navigation, no request. The message "Enter a word to search for." appears under the field in `danger`, `t-body-sm`, with the alert glyph (20px, 2px stroke, `currentColor`) so it is not colour alone. The field border changes to `danger`. Focus stays in (or returns to) the field. |
+| Error cleared | The message and `aria-invalid` are removed on the next edit of the field, or on a valid submit. |
+| Over-long | `maxLength=100` stops typing at 100 characters. No separate message; paste is cut by the browser. |
+| Valid submit | Navigates to `/search?q={encodeURIComponent(trimmed term)}`. The client trims only; it does not collapse whitespace or match anything. |
+
+- Error association: the message `<p>` has an `id`; while it shows, the `Input` has `aria-invalid="true"` and `aria-describedby` set to that id. When it is gone both attributes are removed (no dangling reference). The message has `role="alert"` because it appears after a submit and must be announced; the field keeps focus so the name, invalid state and description are read together.
+- The message is in normal flow under the field. From 960px the header grows by one line while it shows; nothing overlaps.
+
+### Responsive behaviour
+
+Breakpoints 600px and 960px only. The header inner row is `flex-col` below 960px and a single row from 960px.
+
+| Width | Layout |
+| --- | --- |
+| Below 600px | Stacked: brand row, `CategoryNav` rows, then the search row. The search form fills the container width (padding `space-4`); field and button on one row, `space-2` apart. `space-2` gap between brand and nav as before, `space-3` between nav and search. No horizontal scroll: the field shrinks (`min-w-0`), the button never wraps. Error message wraps under the field. |
+| 600px to 959px | Same stack; container padding `space-6`. Search form still fills the width. Header padding `space-3` top and bottom. |
+| 960px and up | One row, vertically centred: brand at the left, `CategoryNav` takes the free space and wraps within it, `SearchBar` pushed to the right (`ml-auto`), kept from shrinking, with the field `card-min` wide plus the button. `space-4` between items. Header padding `space-4`. |
+
+- Fit check: at the widest case (`container-max` minus `space-6` padding each side) brand, search (`card-min` field, `space-2`, button) and the nav fit on one row for the few categories the catalogue has. If the nav needs more room it wraps onto more rows inside its own column; the search bar stays on the right and the row grows taller. At 960px exactly the nav column is narrow and wraps sooner; accepted. No item is hidden, no scrolling, no menu.
+- Tab order in the header: brand, each category link, search field, "Search".
+
+### Copy
+
+| Where | Text |
+| --- | --- |
+| Label (sr-only) | Search products |
+| Placeholder | Search products |
+| Button | Search |
+| Empty-submit error | Enter a word to search for. |
+
+## Search results page
+
+Route `/search?q=`. Rendered inside `RootLayout > main`; the header search bar shows the term.
+
+### Component tree
+
+```
+SearchPage
+  h1                                  Results for "term"   t-heading-lg, ink, wraps (overflow-wrap anywhere)
+  status "ready", results non-empty:
+    h2 (sr-only)                      "Matching products"
+    ProductGrid(products, status="ready", onEnquire, renderTitle)
+      ul > li x N > ProductCard(product, onEnquire, renderTitle)
+  status "loading":
+    ProductGrid(products=[], status="loading")
+  status "error":
+    ProductGrid(products=[], status="error")          default copy
+  status "ready", no matches:
+    ProductGrid(products=[], status="ready", emptyTitle, emptyBody)
+  q missing or empty (no request):
+    h1 "Search products"
+    Notice (info)
+```
+
+- Data: `SearchPage` reads `q` with `useSearchParams`, trims it, and calls `api.searchProducts(q)`. It passes the `Product[]` straight to `ProductGrid`. No matching, ranking, filtering or slicing in the component; the server returns provider order. One grid only, no sections, no sort or filter controls. Paging is #18.
+- Cards: `renderTitle` is a `Link` to `/products/:id` and `onEnquire` navigates to `/products/:id`, same as home and category. `Enquire` is the only product action.
+- `term` is the trimmed `q` shown as plain text (React escapes it), in straight double quotes.
+- A result count is not shown (no requirement).
+- Heading order: `h1`, then the sr-only `h2` (only when ready, so cards do not jump from `h1` to `h3`), then card `h3`. The header has no heading.
+
+### States
+
+| State | What the user sees |
+| --- | --- |
+| Loading | `h1` with the term. One `ProductGrid status="loading"`: placeholder cards in `surface-muted` (`radius-sm` bars), `aria-busy="true"`, name "Loading products". No spinner, no animation. No `h2`. |
+| Ready | `h1`, then cards in server order, linked to `/products/:id`. |
+| Error | `h1` stays. `ProductGrid` error `Notice` danger, A 400 with `fields.q` (for example an over-long term reached by editing the URL) shows a destructive `Alert` titled "Search did not run" with the server's `q` message as the body (for example "Use 100 characters or fewer."). Any other error, and a 400 without `fields.q`, shows the default copy: title "Products did not load", body "Check your connection and refresh the page to try again.". `role="alert"`. The client trims only; the server collapses whitespace. |
+| Empty | `h1` stays. `Notice` info on `surface-muted`: title `No products match "term"`, body "Try a different word or browse a category." The header nav is the way to browse. |
+| Missing or empty `q` | No request. `h1` reads "Search products". `Notice` info: title "No search term", body "Enter a word to search for." The header search box is the control. No grid. |
+
+Notes:
+
+- Retry is a hint ("refresh the page"), no button.
+- Long term: the term is at most 100 characters after trimming (the bar's `maxLength`), but a URL can carry more; the `h1` and the empty-state `Notice` title both wrap (`overflow-wrap: anywhere`), never truncate and never cause horizontal scroll, at 320px as at desktop.
+- A new search from the header changes `q`, which returns the page to loading for the new term; the `h1` and `document.title` follow.
+
+### Responsive behaviour
+
+Breakpoints 600px and 960px only. Column count comes from `card-min`, not a breakpoint rule.
+
+| Width | Layout |
+| --- | --- |
+| Below 600px | One column. Container padding `space-4`. `h1` stays `t-heading-lg`, wraps over lines. `space-5` between `h1` and grid. `Enquire` full width, at least `touch-target` tall. Notices fill the width. |
+| 600px to 959px | Container padding `space-6`. Grid fits two to three columns, gap `space-5`. |
+| 960px and up | `main` top and bottom `space-8`. Grid fits four to five columns up to `container-max`, gap `space-5`. |
+
+### Accessibility
+
+- Landmarks: `header` with `nav` "Categories" and `search` (the form), then `main`.
+- Document title: `Search - Catalogue`, set by the page and reset to "Catalogue" on leave. It does not include the term.
+- Loading through `aria-busy` and the label, error through `role="alert"`, empty and missing-term notices as `role="status"`. State is never colour alone (icon, title and words).
+- Tab order after the header: title link, then `Enquire`, per card.
+
+### Copy
+
+Straight double quotes around the term. Sentence case, no exclamation marks.
+
+| Where | Text |
+| --- | --- |
+| Page title (h1) | Results for "term" |
+| Page title, no term | Search products |
+| Sr-only section heading | Matching products |
+| Card action | Enquire |
+| Loading label (accessible only) | Loading products |
+| Error title | Products did not load |
+| Error body | Check your connection and refresh the page to try again. |
+| Error title, 400 with `fields.q` | Search did not run |
+| Error body, 400 with `fields.q` | The server's `q` message, for example "Use 100 characters or fewer." |
+| Empty title | No products match "term" |
+| Empty body | Try a different word or browse a category. |
+| No-term title | No search term |
+| No-term body | Enter a word to search for. |
+| Document title | Search - Catalogue |
 
 ## Not found
 

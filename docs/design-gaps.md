@@ -9,7 +9,7 @@ Rulings on pieces the five features need that `design-system/README.md` does not
 - Markup: `<header>` containing one `<a>`/`<Link to="/">` with the brand text (plain text "Catalogue"; no logo, branding is pending). Styled with tokens only (`ink`, `t-heading-sm`, `border` hairline under it, `surface`). The link is at least 44px tall and shows the 2px focus outline.
 - Props: none. It takes no `Product`.
 - Scope in issue 13: brand link only. Category nav was deferred to the category-listing issue, because `GET /categories` did not exist yet and `product-scope.md` forbids endpoints and UI for later.
-- Issue 14 added the nav to this header (done): built from `GET /categories` via `api.ts`, composed from `Button` (ghost) links (ruled in the issue 14 section below; `CategoryFilter` was deleted), with its own loading/error/empty handling. The search box belongs to the search issue.
+- Issue 14 added the nav to this header (done): built from `GET /categories` via `api.ts`, composed from `Button` (ghost) links (ruled in the issue 14 section below; `CategoryFilter` was deleted), with its own loading/error/empty handling. The search box was added in issue 15 (see below).
 - Why not a new component: the README lists seven components for browsing content, and a page header is a layout wrapper with one link. Nothing in it needs a new token, state or glyph.
 
 ## PageContainer
@@ -97,6 +97,35 @@ No new components. Two requests, both **resolved** with one optional prop.
    - Reason: a second prop would only restate the heading text and could drift from it.
 
 The nav error copy ("Categories did not load" / "Refresh the page to try again.") and the unknown-category tone (info `Notice`, not danger) are design choices in `docs/design.md`, not requests.
+
+## Issue 15 (search)
+
+### SearchBar
+
+**Ruling: compose. One app-level `SearchBar` in `client/src/components/`, no new design-system part.** The design system (README, `design-system.json`) does not list a SearchBar. `Input`, `Label` and `Button` already exist in `client/src/components/ui`, and a search form is those three in a `<form role="search">`. The design-system `Field` (label, hint, error) covers the inline error.
+
+- Props: `defaultValue?: string` (the current term on the results page) and optional `className`. It takes no `Product`. It uses react-router's `useNavigate` and on submit navigates to `/search?q=${encodeURIComponent(term)}`; it never calls the API. The results page does the fetch.
+- Markup: `<form role="search">`, a `Label` "Search products" (`sr-only`, because the adjacent "Search" button and the `search` landmark make the purpose visible; it is still a real `<label>`, never placeholder-only), `Input type="search"` (44px min height, 16px text), submit `Button` "Search" (44px). Field and button in one row; the field takes the remaining width.
+- Validation: on submit the client trims; if empty it does not navigate and shows an inline error under the field, "Enter a word to search for." (`aria-invalid`, `aria-describedby` to the message). Length is bounded with `maxLength={100}` on the input; no separate over-long message client side. Server rules remain the source of truth; the client does not collapse whitespace or match anything.
+- Why not a new design-system component: it needs no new token, state or glyph. If the enquiry form's field pattern is later factored into `Field`, SearchBar uses it, nothing else changes.
+
+### Placement in SiteHeader
+
+**Ruling: compose. `SearchBar` is a third child of `SiteHeader`, on every page.**
+
+- Below 960px: brand, then `CategoryNav`, then `SearchBar`, stacked (header is already `flex-col`). From 960px: one row, brand, nav, and the search bar pushed right with `min-[960px]:ml-auto`. Nav wraps rather than scrolls, as ruled in issue 14. Search is not on the header's first row on narrow screens; stacking keeps every target at least 44px with no horizontal scroll.
+- On `/search` the header bar shows the current term via `defaultValue` read from `useSearchParams`; the bar is keyed on the term so it resets on a new search.
+- Home and category pages do not get a second search box.
+
+### Results page structure
+
+**Ruling: compose. `SearchPage` in `client/src/pages/` from existing parts.** Route `/search` in `routes.tsx`.
+
+- `<h1>` `Results for "term"`, then one `ProductGrid` of `ProductCard`, with the same `renderTitle` link and `onEnquire` navigation as home and category.
+- Loading, error and empty are `ProductGrid` states (`frontend.md`). Empty copy: `emptyTitle` "No products match "term"", `emptyBody` "Try a different word or browse a category." Error uses the default copy. No new component.
+- Missing or empty `q` in the URL (someone opens `/search` directly): no request; show a `Notice` info "Enter a word to search for." with no grid. A 400 with `fields.q` from the server (an over-long term, only reachable by editing the URL) shows a destructive `Alert` titled "Search did not run" with the server's `q` message (for example "Use 100 characters or fewer."). Other errors, and a 400 without `fields.q`, keep the generic "Products did not load" `ProductGrid` error state. The client trims only; the server collapses whitespace.
+- `document.title`: `Search - Catalogue`. A result count is not shown (no requirement).
+- Pagination controls are #18. No sort or filter controls.
 
 ## Conflicts found
 
