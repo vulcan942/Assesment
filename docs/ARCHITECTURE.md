@@ -214,12 +214,6 @@ All config is environment variables, read and validated once at start-up (`confi
 
 The Dockerfiles and env-only config run on ECS or App Runner as they are. SES replaces Mailpit by adding a `Mailer` adapter and setting `MAIL_PROVIDER`. A managed catalogue replaces Fake Store by adding a `ProductProvider` adapter. No code outside the adapter and config changes.
 
-## 14. Open decisions
+## 14. Decisions
 
-Each needs an owner to settle it and a line in `docs/DECISIONS.md`.
-
-1. **Product detail fields.** `design-system/contract.md` omits `description`, but the product page should show "full details". Proposal: `GET /products/:id` returns `Product` plus `description`; extend the contract with an optional `description` on that one endpoint.
-2. **Routing.** Four pages need client-side routing, and CLAUDE.md says no new libraries without asking. Proposal: add `react-router`. The alternative, hash or query-string state by hand, is more code than the dependency.
-3. **"Top rated" size per category.** The criteria do not say how many. Proposal: top 3 by rating, a constant in the catalogue service.
-4. **Caching.** Fake Store is slow and public. Proposal for the PoC: none; add an in-memory TTL cache inside the provider only if latency hurts.
-5. **Naming.** Agent and skill files call the interfaces `ProductSource` and `EmailSender`; the rules and this document use `ProductProvider` and `Mailer`. This document is the reference; the agent and skill files should be aligned.
+Settled in `docs/DECISIONS.md`: product detail fields, routing, top-rated size, caching, interface naming.
