@@ -7,9 +7,12 @@ export const idSchema = z.string().regex(/^[\w-]+$/).max(64)
 const digitParam = (min: number, max: number, fallback: number) =>
   z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().min(min).max(max)).default(fallback)
 
-const pagingSchema = z.object({ page: digitParam(1, Number.MAX_SAFE_INTEGER, 1), pageSize: digitParam(1, 50, 12) })
+// Keeps (page - 1) * pageSize exact in a double.
+const MAX_PAGE = 1_000_000
 
-const pagingMessages = { page: 'Use a whole number from 1.', pageSize: 'Use a whole number from 1 to 50.' }
+const pagingSchema = z.object({ page: digitParam(1, MAX_PAGE, 1), pageSize: digitParam(1, 50, 12) })
+
+const pagingMessages = { page: 'Use a whole number from 1 to 1000000.', pageSize: 'Use a whole number from 1 to 50.' }
 
 // Returns field messages instead of throwing so search can merge them with its own q error into one 400.
 export function parsePaging(query: Record<string, unknown>) {

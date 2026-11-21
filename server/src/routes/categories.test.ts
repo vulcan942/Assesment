@@ -82,13 +82,13 @@ describe('GET /api/categories/:category/products', () => {
     expect(body).toMatchObject({ page: 5, pageSize: 7, total: 40 })
   })
 
-  const pageError = { page: 'Use a whole number from 1.' }
+  const pageError = { page: 'Use a whole number from 1 to 1000000.' }
   const sizeError = { pageSize: 'Use a whole number from 1 to 50.' }
   const invalid = (fields: object) => ({
     error: { code: 'validation_failed', message: 'Check the highlighted fields.', fields },
   })
 
-  it.each(['0', '-1', 'abc', '1.5', '1e1', '0x10', '%201', '1%20', '', '1.0', '99999999999999999999999'])(
+  it.each(['0', '-1', 'abc', '1.5', '1e1', '0x10', '%201', '1%20', '', '1.0', '1000001', '99999999999999999999999'])(
     'returns 400 for page=%s',
     async (value) => {
       const res = await fetch(`${start(stub({}))}/api/categories/men/products?page=${value}`)
@@ -101,6 +101,20 @@ describe('GET /api/categories/:category/products', () => {
     const res = await fetch(`${start(stub({}))}/api/categories/men/products?pageSize=${value}`)
     expect(res.status).toBe(400)
     expect(await res.json()).toEqual(invalid(sizeError))
+  })
+
+  it('validates paging before looking up the category', async () => {
+    const getCategoryPage = vi.fn(failWith(new NotFoundError('Unknown category nope')))
+    const res = await fetch(`${start(stub({ getCategoryPage }))}/api/categories/nope/products?page=0`)
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual(invalid(pageError))
+    expect(getCategoryPage).not.toHaveBeenCalled()
+  })
+
+  it('returns 404 for an unknown category when paging is valid', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const res = await fetch(`${start(stub({ getCategoryPage: failWith(new NotFoundError('Unknown category nope')) }))}/api/categories/nope/products`)
+    expect(res.status).toBe(404)
   })
 
   it('returns 400 for a repeated page param', async () => {
@@ -215,6 +229,12 @@ describe('category endpoints with the real service and a fake provider', () => {
     const body = (await (await fetch(`${real()}/api/categories/men/products?page=2&pageSize=1`)).json()) as Body
     expect(body).toMatchObject({ topRated: [], page: 2, pageSize: 1, total: 2 })
     expect(body.products.map((p) => p.id)).toEqual(['1'])
+  })
+
+  it('accepts the maximum page of 1000000 and returns empty products', async () => {
+    const res = await fetch(`${real()}/api/categories/men/products?page=1000000`)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ products: [], page: 1000000, total: 2 })
   })
 
   it('returns 200 with empty products and the real total past the end', async () => {

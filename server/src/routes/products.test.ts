@@ -105,16 +105,21 @@ describe('GET /api/products (search)', () => {
     expect(body).toEqual({ products: [], page: 5, pageSize: 12, total: 1 })
   })
 
+  it('accepts the maximum page of 1000000 and returns empty products', async () => {
+    const body = await (await fetch(`${withProducts()}/api/products?q=shirt&page=1000000`)).json()
+    expect(body).toEqual({ products: [], page: 1000000, pageSize: 12, total: 1 })
+  })
+
   it('passes a custom page and pageSize to the service', async () => {
     const search = vi.fn<CatalogueService['search']>(async (_t, paging) => ({ products: [], total: 0, ...paging }))
     await fetch(`${start(stub({ search }))}/api/products?q=hat&page=3&pageSize=7`)
     expect(search).toHaveBeenCalledWith('hat', { page: 3, pageSize: 7 })
   })
 
-  const pageError = 'Use a whole number from 1.'
+  const pageError = 'Use a whole number from 1 to 1000000.'
   const sizeError = 'Use a whole number from 1 to 50.'
 
-  it.each(['0', '-1', 'abc', '1.5', '1e1', '0x10', '%201', ''])('returns 400 for page=%s', async (value) => {
+  it.each(['0', '-1', 'abc', '1.5', '1e1', '0x10', '%201', '1000001', ''])('returns 400 for page=%s', async (value) => {
     const res = await fetch(`${withProducts()}/api/products?q=hat&page=${value}`)
     expect(res.status).toBe(400)
     expect(await res.json()).toEqual({
