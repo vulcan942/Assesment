@@ -27,4 +27,12 @@ describe('loadConfig', () => {
   it('rejects a featured list that is not five ids', () => {
     expect(() => loadConfig({ ...valid, FEATURED_PRODUCT_IDS: '1,2' })).toThrow(/exactly 5/)
   })
+
+  it('rejects an unknown product source', () => {
+    expect(() => loadConfig({ ...valid, PRODUCT_SOURCE: 'nope' })).toThrow(/PRODUCT_SOURCE/)
+  })
+
+  it('rejects a product source base url that is not a url', () => {
+    expect(() => loadConfig({ ...valid, FAKESTORE_BASE_URL: 'nope' })).toThrow(/FAKESTORE_BASE_URL/)
+  })
 })

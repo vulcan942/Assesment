@@ -5,7 +5,7 @@ import { ProductGrid } from '@/components/ProductGrid'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { sampleProducts } from '@/data/sampleProducts'
 import type { Product } from '@/lib/product'
-import { sendEnquiry } from '@/lib/sendEnquiry'
+import { sendEnquiry } from '@/lib/api'
 
 export default function App() {
   const [category, setCategory] = useState<string | null>(null)
