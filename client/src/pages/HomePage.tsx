@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
+import { CategoryNav } from '@/components/CategoryNav'
 import { ProductGrid } from '@/components/ProductGrid'
 import { getFeatured } from '@/lib/api'
 import type { Product } from '@/lib/product'
@@ -25,6 +26,7 @@ export function HomePage() {
   }, [])
 
   return (
+    <>
     <section aria-labelledby="featured-heading" className="flex flex-col gap-4">
       <h2 id="featured-heading" className="text-xl leading-7 font-semibold">
         Featured products
@@ -47,5 +49,7 @@ export function HomePage() {
         emptyBody="No featured products right now. Try browsing a category."
       />
     </section>
+    <CategoryNav heading="Browse categories" className="mt-8 min-[960px]:mt-12" />
+    </>
   )
 }

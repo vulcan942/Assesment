@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, getCategoryProducts, getFeatured, searchProducts, sendEnquiry } from './api'
+import { ApiError, getCategoryPage, getFeatured, searchProducts, sendEnquiry } from './api'
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -59,10 +59,10 @@ describe('api', () => {
     expect(fn.mock.calls[0][0]).toBe('/api/products?q=men+%26+women%2Fshirt')
   })
 
-  it('encodes the category path segment and sends paging params', async () => {
-    const fn = stubFetch(async () => json({ topRated: [], products: [], page: 2, pageSize: 5, total: 0 }))
-    await getCategoryProducts("men's clothing", { page: 2, pageSize: 5 })
-    expect(fn.mock.calls[0][0]).toBe("/api/categories/men's%20clothing/products?page=2&pageSize=5")
+  it('encodes the category path segment', async () => {
+    const fn = stubFetch(async () => json({ topRated: [], products: [], page: 1, pageSize: 20, total: 0 }))
+    await getCategoryPage("men's clothing")
+    expect(fn.mock.calls[0][0]).toBe("/api/categories/men's%20clothing/products")
   })
 
   it('posts the enquiry as JSON', async () => {

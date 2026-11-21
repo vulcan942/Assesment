@@ -1,16 +1,18 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { describe, expect, it, vi } from 'vitest'
-import { ApiError, getFeatured } from '@/lib/api'
+import { ApiError, getCategories, getFeatured } from '@/lib/api'
 import { routes } from '@/routes'
 
 vi.mock('@/lib/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/api')>()),
   getFeatured: vi.fn(),
+  getCategories: vi.fn().mockResolvedValue([]),
 }))
 
 const mockedGetFeatured = vi.mocked(getFeatured)
+vi.mocked(getCategories).mockResolvedValue([])
 const products = [
   { id: 1, title: 'Backpack', price: 109.95, image: '', category: "men's clothing" },
   { id: 7, title: 'Hard drive', price: 64, image: '', category: 'electronics' },
@@ -58,5 +60,25 @@ describe('HomePage', () => {
     const router = renderHome()
     await userEvent.click(await screen.findByRole('button', { name: /about Hard drive/ }))
     expect(router.state.location.pathname).toBe('/products/7')
+  })
+
+  it('shows a Browse categories block whose links open each category', async () => {
+    mockedGetFeatured.mockResolvedValue(products)
+    vi.mocked(getCategories).mockResolvedValue(['electronics', 'jewelery'])
+    renderHome()
+    const nav = await screen.findByRole('navigation', { name: 'Browse categories' })
+    expect(within(nav).getByRole('link', { name: 'electronics' })).toHaveAttribute('href', '/categories/electronics')
+    expect(within(nav).getByRole('link', { name: 'jewelery' })).toHaveAttribute('href', '/categories/jewelery')
+    vi.mocked(getCategories).mockResolvedValue([])
+  })
+
+  it('gives the header nav and the home nav different accessible names', async () => {
+    mockedGetFeatured.mockResolvedValue(products)
+    vi.mocked(getCategories).mockResolvedValue(['electronics'])
+    renderHome()
+    await screen.findByRole('navigation', { name: 'Browse categories' })
+    expect(screen.getByRole('navigation', { name: 'Categories' })).toBeInTheDocument()
+    expect(screen.getAllByRole('navigation')).toHaveLength(2)
+    vi.mocked(getCategories).mockResolvedValue([])
   })
 })
