@@ -27,6 +27,11 @@ Setup issues 1 to 7 first (repo hygiene, server scaffold, design system wiring, 
 - Issue 12, backend fix agent: it reported "placeholder" instead of a real report. Caught by inspecting the diff myself.
 - Issue 12, first review: the client still held a Fake Store mapper. The reviewer agent caught it.
 - Issue 12, mutation checks: breaking the code on purpose showed three weak tests (non-2xx, invalid JSON, base URL) that still passed. They were tightened.
+- Issue 13, config: a hand-written `.length(5)` check on featured ids conflicted with the spec assumption that the count is not enforced. The architect agent caught it.
+- Issue 13, design build: the design builder used Tailwind steps that did not match the space tokens (24/32px instead of 32/64px). The design-reviewer agent caught it.
+- Issue 13, spec: an assumption said the featured ids have a default, but config has none. The reviewer agent caught it.
+- Issue 13, process: a builder ran `git stash` while another builder worked in the same tree. It said so in its report, and the tree was verified intact.
+- Issue 13, tests: jsdom failures were a wrong Node on PATH, first misdiagnosed as a Git Bash problem. Later shown to be nvm resolving v20 in both shells.
 
 ## Time spent
 

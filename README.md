@@ -26,7 +26,7 @@ All settings come from environment variables and are listed in [.env.example](.e
 
 ## Develop without Docker
 
-Needs Node 22 (Node 20 breaks the client tests). Check `node -v` in the shell you test from: on one Windows machine Git Bash resolved Node 20 while PowerShell had Node 24.
+Needs Node 22 (Node 20 breaks the client tests). Tests need Node 24 here. On Windows, nvm can make `node` resolve to v20 in both Git Bash and PowerShell; put `C:\Program Files\nodejs` first on PATH and check `node -v` before running tests.
 
 ```sh
 npm run setup        # install server and client dependencies

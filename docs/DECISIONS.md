@@ -21,14 +21,23 @@
 - The pagination and top-rated response shapes in `client/src/lib/api.ts` follow `docs/ARCHITECTURE.md` and are unverified until the server routes exist.
 - The provider factory is not wired into `server/src/index.ts` until the first service issue needs it.
 - The adapter builds the upstream URL from the id, so the route-level id schema must reject `.` and `..`, for example `^[\w-]+$`.
-- Node 22 is required (jsdom 31). Node 20 breaks the client jsdom tests.
-- Test failures seen under Git Bash were a wrong Node on its PATH (v20, versus v24 in PowerShell), not a code bug. Check `node -v` first.
+- Node 22 or newer is required (jsdom 31); Node 20 breaks the client jsdom tests. Tests here need Node 24. Local `node` may resolve to v20 via nvm in both Git Bash and PowerShell: put `C:\Program Files\nodejs` first on PATH and check `node -v` before debugging.
+- Featured list: `FEATURED_PRODUCT_IDS` is a comma-separated string of ids, split and trimmed once in config. It is required with no code default (fail fast; the list is config, not code). `.env.example` ships `1,2,3,4,5`. Changing it needs a restart only.
+- The count is not enforced: the endpoint returns whatever is configured, so "exactly five" in `.env.example` and `ARCHITECTURE.md` is a guideline, not a startup check. Blank entries are ignored. An empty list shows the empty state.
+- `react-router` is justified: it routes home, category, search and product pages.
+- Interim state: home cards and `Enquire` navigate to a NotFound page until the product page (#16) lands. `NotFoundPage` is a temporary placeholder.
+- CORS has no preflight handling yet; it is added with the enquiry POST (#17).
+- The server error handler logs `req.path` only. It must never log the enquiry body.
+- Unknown `/api` paths return a JSON 404.
+- Featured order is the configured order, not upstream order.
+- A configured id the provider cannot find is skipped and logged. Other upstream failures (`UpstreamError`) fail the request, as for every endpoint. Reason: one stale id should not blank the home page.
+- Featured cards link to `/products/:id`, the product page route.
+- Featured empty state (no ids configured, or none found) reads "No featured products right now. Try browsing a category."
 
 ## Dropped or simplified
 
 - Design system is consumed as stock shadcn components in `client/src/components/ui` with tokens in `client/src/index.css`, not as a separate package. Fewer moving parts for one app.
 - The "no raw colours" rule is a small script (`scripts/check-boundaries.mjs`), not an ESLint plugin: the client lints with oxlint, which has no rule for this. The same script also covers the Fake Store host, `server/` imports and `fetch(` outside `lib/api.ts` checks.
-- `client/src/data/sampleProducts.ts` still holds Fake Store URLs. The boundary check skips this one file until the client loads products from the API.
 - `client/src/lib/api.ts` now exists and is the only place `fetch(` may appear.
 
 ## Growth path
