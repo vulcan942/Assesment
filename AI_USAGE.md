@@ -19,6 +19,7 @@ Setup issues 1 to 7 first (repo hygiene, server scaffold, design system wiring, 
 - Asked for the design system on stock shadcn/ui with tokens, primitives and composed components. It shaped the client: colours only in `index.css`, components accept only `Product`.
 - Asked for agents and rule files before any feature code, so every stage has written constraints.
 - Asked to implement setup issues 1 to 7 on a new branch and open a PR.
+- Issue 17: told the pipeline to verify real delivery with docker compose and Mailpit, not only with fake mailers. Result: a `201`, one email in Mailpit with Reply-To set, the real product title (not the client's), and the HTML in the message inert.
 
 ## Where the AI was wrong
 
@@ -50,6 +51,15 @@ Setup issues 1 to 7 first (repo hygiene, server scaffold, design system wiring, 
 - Issue 16, client: `first-letter` does not render on a flex element, so the category label was not uppercased. A class-name test could not catch it; the design-reviewer did. The text is now in an inner span.
 - Issue 16, tests: a `document.title` assertion failed once and did not reproduce in about 30 runs. The code reviewer found the root cause: the title is set in a passive effect, so the test raced it. Tests now `waitFor` the title.
 - Issue 16, server: the id was trimmed before the regex, so a padded id like ' 7 ' would be accepted. The reviewer caught it; ids are not trimmed and a padded id is a 400.
+- Issue 17, spec: the spec-analyst did not read `docs/PRODUCT.md`. The architect's re-verification fixed three things: a 413 mapped to 400 (now `413 payload_too_large`), the nginx header (`$remote_addr` became `$proxy_add_x_forwarded_for`), and the honeypot being stripped by zod (it is now read before validation).
+- Issue 17, design: the design had no error slot for the phone field, although the form has one and the server can reject it. Added.
+- Issue 17, process: the orchestrator brief contradicted `design.md` on the honeypot (client short-circuit versus sending `website`). The builder followed the brief and the docs were updated to match.
+- Issue 17, tests: a builder's script truncated the untracked test file `enquiry.body.test.ts` (5 of 17 tests left). Git could not restore it because it was untracked. The tests and their mutation checks were re-derived.
+- Issue 17, server: the rate limiter scanned the whole Map on every request. The reviewer called it a major issue; it now prunes at most once per window.
+- Issue 17, server: the rate-limit key helper produced NaN keys for malformed input. The reviewer caught it; a malformed ip is kept as is.
+- Issue 17, client: a 404 for an unknown product showed the 'check your connection' copy. The reviewer caught it; it now says 'We could not find that product. Go back to the catalogue and try again.'
+- Issue 17, client: a stale failure alert showed beside new inline errors after an invalid resubmit. The design-reviewer caught it; the alert is cleared.
+- Issue 17, review: one agent claimed no SMTP adapter test existed, while one did (`smtpMailer.test.ts`).
 
 ## Time spent
 

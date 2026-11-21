@@ -13,7 +13,9 @@ const schema = z.object({
   MAIL_PROVIDER: z.enum(['smtp']),
   SMTP_HOST: z.string().min(1),
   SMTP_PORT: z.coerce.number().int().positive(),
+  MAIL_FROM: z.email(),
   SALES_EMAIL: z.email(),
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0),
 })
 
 export type Config = z.infer<typeof schema>

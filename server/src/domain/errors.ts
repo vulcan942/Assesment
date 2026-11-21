@@ -6,6 +6,14 @@ export class UpstreamError extends Error {
   }
 }
 
+// Enquiry email could not be delivered. The message is fixed text, never customer data; the cause is for logs only.
+export class MailDeliveryError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options)
+    this.name = 'MailDeliveryError'
+  }
+}
+
 // Requested thing does not exist. Message is for logs only.
 export class NotFoundError extends Error {
   constructor(message: string) {

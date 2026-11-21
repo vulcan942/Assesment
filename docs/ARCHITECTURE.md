@@ -86,8 +86,11 @@ interface ProductProvider {          // everything the app needs from a catalogu
 }
 
 interface Mailer {                   // deliver only; content is built in the service
-  send(message: { to: string; subject: string; body: string }): Promise<void>
+  send(message: MailMessage): Promise<void>
 }
+
+// domain/mail.ts. replyTo is the customer, so sales can answer from the inbox. `from` is adapter config.
+interface MailMessage { to: string; subject: string; body: string; replyTo?: string }
 ```
 
 Typed errors: `UpstreamError` (provider failed, timed out or returned malformed data), `NotFoundError`, `ValidationError`, `MailDeliveryError`. The error handler maps them to HTTP responses. Raw upstream errors and stack traces never reach the client.
@@ -141,12 +144,111 @@ Assumptions are in `docs/DECISIONS.md` (#15). Final contract:
 Assumptions are in `docs/DECISIONS.md` (#16).
 
 - `GET /api/products/:id` -> `200 ProductDetail` = `{ id, title, price?, image?, category?, description? }`. No `rating`.
-- Id schema in `routes/products.ts`: `z.string().trim().regex(/^[\w-]+$/).max(64)`. The regex rejects empty, `.`, `..`, `/` and `%`, which matters because the Fake Store adapter puts the id in a URL path. Failure -> `ValidationError({ id: 'That product link is not valid.' })` -> `400 validation_failed`. Not digits-only, so another provider's id format still works.
+- Id schema (now in `routes/schemas.ts`, shared with the enquiry route): `z.string().regex(/^[\w-]+$/).max(64)`, not trimmed (a padded id is a 400, per `DECISIONS.md`; the earlier `.trim()` here was stale). The regex rejects empty, `.`, `..`, `/` and `%`, which matters because the Fake Store adapter puts the id in a URL path. Failure -> `ValidationError({ id: 'That product link is not valid.' })` -> `400 validation_failed`. Not digits-only, so another provider's id format still works.
 - Service: `CatalogueService.getProduct(id): Promise<Product>` calls `provider.getById(id)`; `null` -> `throw new NotFoundError(...)` -> `404 { error: { code: 'not_found', message: 'We could not find that.' } }`. `UpstreamError` propagates (502).
 - `routes/wire.ts` gains `toDetail(product): WireProductDetail` next to `toCard` (`toCard` fields plus `description`; still no `rating`). `description` is omitted from the JSON when absent. The "what goes on the wire" rule stays in this one file.
 - Registration order in `routes/products.ts`: `/products/featured`, then `/products`, then `/products/:id`.
 - Tests: service (found; `null` -> `NotFoundError`); route (200 shape has `description` and no `rating`, 400 for `..`, `a.b` and 65 chars, 404 shape, 502); `toDetail` drops `rating`.
 - Client: `getProduct(id)` already exists in `api.ts`. `ProductPage` passes `sendEnquiry` from `api.ts` to `EnquiryForm` as `onSubmit` (see `docs/design-gaps.md`).
+
+### Enquiry endpoint wiring (issue 17)
+
+Assumptions and review fixes are in `docs/DECISIONS.md` (#17). Docs only here; nothing below exists yet.
+
+**Contract.** `POST /api/enquiries`, `Content-Type: application/json`:
+
+```ts
+// request (EnquiryPayload from contract.md, plus the honeypot)
+{ name: string, email: string, message: string, phone?: string,
+  product?: { id: string | number, title?: string, price?: number },  // title, price ignored
+  website?: string }                                                   // honeypot, sent only when non-empty, read before validation
+```
+
+| Outcome | Status and body |
+| --- | --- |
+| Sent (or honeypot hit) | `201 { "status": "sent" }` |
+| Invalid field | `400 { error: { code: 'validation_failed', message: 'Check the highlighted fields.', fields } }`, keys among `name`, `email`, `phone`, `message`, `product` |
+| Unreadable JSON | `400 bad_request` (existing handler mapping) |
+| Body over 10 kb | `413 { error: { code: 'payload_too_large', message: 'That enquiry is too large. Shorten your message and try again.' } }` (new handler mapping for `err.status === 413`) |
+| Unknown product id | `404 not_found` (existing generic message) |
+| Product source down while checking the id | `502 upstream_unavailable` (existing) |
+| Too many enquiries | `429 { error: { code: 'rate_limited', message: 'You have sent several enquiries. Try again in a few minutes.' } }` plus `Retry-After: <seconds>` |
+| Email not delivered | `502 { error: { code: 'enquiry_not_sent', message: 'We could not send your enquiry. Try again in a moment.' } }` |
+
+**Zod schema** (in `routes/enquiries.ts`; zod 4; strips unknown keys; messages are customer-facing and become `fields`, first issue per key):
+
+```ts
+const enquirySchema = z.object({
+  name: z.string({ error: 'Enter your name.' }).trim()
+    .min(1, 'Enter your name.').max(100, 'Use 100 characters or fewer.')
+    .regex(/^[^\r\n]*$/, 'Enter your name on one line.'),
+  email: z.string({ error: 'Enter a valid email address.' }).trim()
+    .max(254, 'Enter a valid email address.')
+    .pipe(z.email('Enter a valid email address.')),        // already rejects whitespace and line breaks
+  phone: z.string({ error: 'Enter a valid phone number.' }).trim()
+    .max(30, 'Use 30 characters or fewer.')
+    .regex(/^[\d\s+().-]*$/, 'Use digits, spaces and + - ( ) only.')
+    .transform((v) => v || undefined).optional(),          // blank counts as absent
+  message: z.string({ error: 'Enter a message.' }).trim()
+    .min(1, 'Enter a message.').max(2000, 'Use 2000 characters or fewer.'),
+  product: z.object({
+    id: z.union([z.string(), z.number()]).transform(String).pipe(idSchema),
+  }, { error: 'That product is not valid.' }).optional(),
+})
+```
+
+The route runs `enquirySchema.safeParse(req.body ?? {})` and throws `ValidationError(fields)` on failure. Limits count UTF-16 units after trimming. The client mirrors none of them; the server is the authority.
+
+**Order of checks** (each short-circuits; cheapest and most abusive-traffic-facing first):
+
+1. `app.ts` CORS middleware: sets the `CLIENT_ORIGIN` header and answers `OPTIONS` with `204`, `Access-Control-Allow-Methods: GET, POST`, `Access-Control-Allow-Headers: Content-Type`. Preflights are not rate-limited.
+2. Rate limiter (counts every POST, valid or not, so junk and oversize bodies cost a slot) -> `429`.
+3. `express.json({ limit: '10kb' })`, registered on this route only -> `413` / `400 bad_request`.
+4. Honeypot: `typeof req.body?.website === 'string' && req.body.website.trim() !== ''` -> log `enquiry honeypot hit ip=<ip>`, return `201 { status: 'sent' }`, no mail, no upstream call.
+5. Schema validation -> `400`.
+6. Service: product lookup via the catalogue -> `404` / `502 upstream_unavailable`.
+7. Service: build the email, `mailer.send` -> `502 enquiry_not_sent`.
+8. `201 { status: 'sent' }`, only after step 7 resolved.
+
+The route is `router.post('/enquiries', limiter, express.json({ limit: '10kb', strict: false }), handler)`; arrays and scalars are treated like a missing body. The honeypot check is a request-shape guard (like validation), not a business rule, so it lives in the route; the service never sees bot traffic. The client sends `website` only when it is non-empty and does not short-circuit: the server's `201` decides, so bot hits reach the server and are logged.
+
+**Rate limiter notes.** In memory per process (lost on restart). Idle keys are pruned at most once per window, not on every request. The key is the IP with IPv6 grouped on the /64 prefix and IPv4-mapped addresses read as IPv4; a malformed ip is kept as is. A mail failure is logged once, in the error handler (masked email and product id).
+
+**Server pieces** (layering unchanged: route -> service -> provider):
+
+- `domain/mail.ts`: `Mailer`, `MailMessage` (above). `domain/errors.ts` gains `MailDeliveryError(message, { cause })`, same shape as `UpstreamError`. Its message is fixed text; it never contains customer data.
+- `services/enquiry.ts`: `createEnquiryService({ mailer, catalogue, salesEmail })` returns `{ submit(input) }`. `catalogue` is typed `Pick<CatalogueService, 'getProduct'>`. `input` is `{ name, email, phone?, message, productId? }`, already validated.
+  - With `productId`: `catalogue.getProduct(id)` (throws `NotFoundError` or `UpstreamError`), and the email uses the provider's title and price.
+  - Plain-text body (no HTML): a product line (`Product: <title> (id <id>), USD <price>`, or `No product`), `Name`, `Email`, `Phone` (or `Not given`), then `Message:` and the text. Sanitising: `\r\n` becomes `\n` and other control characters are removed in the message; every single-line value (name, email, product title) and the subject collapse control characters and line breaks to a space.
+  - Subject `Enquiry: <title> from <name>` (`Enquiry from <name>` without a product), sanitised, cut to 150 characters. `to` is `salesEmail`, `replyTo` is the customer email.
+  - `try { await mailer.send(...) } catch (cause) { log; throw new MailDeliveryError('Enquiry email not delivered', { cause }) }`.
+  - Logs product id, masked email and, on failure, the error. `maskEmail` is a non-exported function in this file (`jo***@example.com`: first two characters of the local part, one if shorter), covered through the log output in the service test. No name, phone or message in any log.
+- `providers/smtp/smtpMailer.ts`: `createSmtpMailer({ host, port, from })` using `nodemailer.createTransport({ host, port, connectionTimeout: 5000, greetingTimeout: 5000, socketTimeout: 5000 })`. `send` calls `sendMail({ from, to, replyTo, subject, text: body })`. It knows no enquiry content and wraps no errors. Only file that imports `nodemailer`.
+- `providers/index.ts`: add `createMailer(config: Config): Mailer`, a `switch (config.MAIL_PROVIDER)` with one `'smtp'` case, next to `createProductProvider`. Same composition-root role, so no new module.
+- `routes/enquiries.ts`: `enquiriesRouter(enquiry)`: the limiter, the body parser, the honeypot, the schema, one `enquiry.submit(...)` call, the `201`. Constants `LIMIT = 5` and `WINDOW_MS = 10 * 60_000` live here (they never vary, so not config).
+- `routes/rateLimit.ts`: `createRateLimit({ limit, windowMs, now = Date.now })` returns an Express `RequestHandler`. State is a per-instance `Map<ip, number[]>` of hit times; each call drops expired entries (all keys, so the map cannot grow without bound), then either records the hit and calls `next()` or answers `429` with the shared body and `Retry-After` (seconds until the oldest hit expires, rounded up). It writes the 429 itself rather than throwing, because the error handler is for domain errors. It is HTTP middleware, so it sits in `routes/`; no `middleware/` folder for one file. Key is `req.ip`.
+- `routes/schemas.ts`: `idSchema`, moved out of `products.ts`.
+- `routes/errorHandler.ts`: add `MailDeliveryError` -> 502 `enquiry_not_sent`, and `err.status === 413` -> 413 `payload_too_large`. The existing log line stays (`req.path` only; it must not log the body).
+- `config.ts`: `MAIL_FROM: z.email()` and `TRUST_PROXY_HOPS: z.coerce.number().int().min(0)`, both required (see section 10).
+- `app.ts`: `createApp(config: Pick<Config, 'CLIENT_ORIGIN' | 'TRUST_PROXY_HOPS'>, services: { catalogue, enquiry })`; calls `app.set('trust proxy', config.TRUST_PROXY_HOPS)` first; the CORS middleware gains the `OPTIONS` branch; `app.use('/api', enquiriesRouter(services.enquiry))`. Existing `createApp` call sites in tests need the new config key and an `enquiry` service (use the helpers below).
+- `index.ts` (composition root): `createEnquiryService({ mailer: createMailer(config), catalogue, salesEmail: config.SALES_EMAIL })`, passed to `createApp`.
+
+**Infra.**
+
+- `client/nginx.conf`: inside `location /api/`, add `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`.
+- `docker-compose.yml`, `server.environment`: add `TRUST_PROXY_HOPS: 1` (it overrides the `0` from `.env.example`). `MAIL_FROM` comes from `.env.example`. Mailpit and `SMTP_HOST: mailpit` are already there.
+- On AWS behind a load balancer in front of nginx, set `TRUST_PROXY_HOPS=2`; with a different count the limiter keys on the wrong address.
+
+**Client** (details in `docs/design-gaps.md`, issue 17): `lib/enquiry.ts` adds `EnquiryError { fields?, message? }`; `sendEnquiry` in `api.ts` converts 400 `fields`, and the 429, 413 and `enquiry_not_sent` messages, into it and rethrows anything else as is; `EnquiryForm` shows `fields` beside the inputs (adding `phone`) and the message in the failure alert.
+
+**Tests.** No new network and no real SMTP.
+
+- `test/helpers.ts` gains `fakeMailer(failWith?: Error): Mailer & { sent: MailMessage[] }`: `send` pushes the message and resolves, or rejects with `failWith`. Mirrors `fakeProductProvider`. Also a `fakeEnquiry` or small `testApp(overrides)` helper so existing `createApp` call sites stay one line.
+- Service (fake mailer and fake catalogue): body holds name, email, phone, message and the provider's title and price, not the client's; header values have no line breaks; control characters stripped; no product -> `No product`; unknown product -> `NotFoundError` and nothing sent; mailer rejection -> `MailDeliveryError` with the cause kept; logs contain the masked email and never the message.
+- Route (real service, fake mailer, fake provider, real `listen(0)` as existing tests): 201 and one mail sent; 400 `fields` for each rule (name, email, phone, message, product, blank phone allowed); honeypot -> 201 and nothing sent; 404; 413 on an 11 kb body; 429 on the sixth request with `Retry-After` and no mail on the sixth; 502 `enquiry_not_sent` when the mailer fails; non-JSON body -> 400; `OPTIONS` preflight headers; a spoofed `X-Forwarded-For` does not change the key when `TRUST_PROXY_HOPS` is 0.
+- Rate limiter unit test with a fake `now`: allows 5, blocks the 6th, allows again after the window, separate IPs do not share a bucket, `Retry-After` value.
+- SMTP adapter test: `createSmtpMailer` takes an optional second argument, a nodemailer `Transporter`, so the mapping test passes `createTransport({ jsonTransport: true })` (builds the message, sends nothing) and asserts from, to, reply-to, subject and text; the error test points the default transport at a closed localhost port and asserts `send` rejects (the test network guard allows localhost). No real SMTP.
+- Checking that the email reaches Mailpit (`http://localhost:8025`) is a manual step in `docker compose up`.
 
 ### Service responsibilities
 
@@ -183,11 +285,13 @@ Errors share one shape and the right status:
 | --- | --- |
 | 400 | Invalid body, query or path param (`fields` present), or an unreadable request such as bad percent-encoding (`bad_request`) |
 | 404 | Unknown product or category (well-formed id/name the source does not know) |
-| 502 | Product source failed |
-| 502 | Enquiry email could not be delivered (customer is told it failed, nothing is reported as sent) |
+| 413 | Enquiry body over 10 kb (`payload_too_large`) |
+| 429 | Too many enquiries from one address (`rate_limited`, with `Retry-After`) |
+| 502 | Product source failed (`upstream_unavailable`) |
+| 502 | Enquiry email could not be delivered (`enquiry_not_sent`; customer is told it failed, nothing is reported as sent) |
 | 500 | Anything unexpected, with a generic message |
 
-Enquiry body (matches `EnquiryPayload` in `design-system/contract.md`): `name`, `email`, `message` required, `phone` optional, `product: { id, title, price? }`. The server revalidates all of it: trimmed, length-limited, valid email.
+Enquiry body (matches `EnquiryPayload` in `design-system/contract.md`): `name`, `email`, `message` required, `phone` optional, `product: { id }` optional (the server ignores `title` and `price` and uses the provider's). The server revalidates all of it: trimmed, length-limited, valid email. Exact schema, limits, check order and error bodies: "Enquiry endpoint wiring (issue 17)".
 
 Search input is trimmed, whitespace-collapsed and limited to 100 characters; an empty term is rejected with `validation_failed` and `fields.q` (see Search endpoint wiring).
 
@@ -235,8 +339,8 @@ Any other source is a new folder under `providers/` that implements `ProductProv
 
 ```
 EnquiryForm -> api.ts POST /api/enquiries
-  route:   validate body (zod)                      -> 400 on failure
-  service: build email (escaped), call Mailer
+  route:   rate limit, parse, honeypot, validate (zod)   -> 429 / 413 / 400 on failure
+  service: check product, build email (sanitised), call Mailer
   adapter: deliver over SMTP                        -> Mailpit locally
   success: 201 -> form shows "Thank you"
   failure: MailDeliveryError -> 502 -> form shows "Your enquiry was not sent..."
@@ -256,8 +360,10 @@ All config is environment variables, read and validated once at start-up (`confi
 | `FAKESTORE_BASE_URL` | Upstream base URL, used only by that adapter |
 | `FEATURED_PRODUCT_IDS` | Comma-separated IDs for the home page, in display order (required, no code default; `.env.example` ships `1,2,3,4,5`). Five is the intent; the count is not enforced (see `DECISIONS.md`) |
 | `MAIL_PROVIDER` | Which `Mailer` adapter to build (`smtp`) |
-| `SMTP_HOST`, `SMTP_PORT` | SMTP target (Mailpit locally) |
+| `SMTP_HOST`, `SMTP_PORT` | SMTP target (Mailpit locally). The adapter is local only (`secure: false`, no auth); SES or authenticated SMTP needs `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS` added |
+| `MAIL_FROM` | Sender address on enquiry emails (required; `.env.example` ships `catalogue@example.com`). The customer is Reply-To, never From |
 | `SALES_EMAIL` | Recipient of enquiries |
+| `TRUST_PROXY_HOPS` | Number of reverse proxies in front of the server, for `req.ip` and the enquiry rate limit. `0` in `.env.example` (direct), `1` in compose (nginx), `2` behind a load balancer plus nginx |
 
 ## 11. Security basics
 
@@ -267,7 +373,7 @@ All config is environment variables, read and validated once at start-up (`confi
 - Never log customer contact details in full. Log errors with enough context to debug.
 - No secrets in the repo; `.env` is ignored.
 - Upstream and mail errors are mapped to our own errors, so internals do not leak.
-- Rate limit or honeypot on `POST /enquiries` (tracked in the enquiry feature issue).
+- `POST /enquiries` has a honeypot and a per-IP rate limit (5 per 10 minutes, in memory), a 10 kb body limit, and re-checks the product server-side (see "Enquiry endpoint wiring (issue 17)").
 
 ## 12. Testing strategy
 

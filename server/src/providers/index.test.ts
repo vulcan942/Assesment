@@ -15,7 +15,9 @@ describe('createProductProvider', () => {
       MAIL_PROVIDER: 'smtp',
       SMTP_HOST: 'h',
       SMTP_PORT: '1',
+      MAIL_FROM: 'a@b.co',
       SALES_EMAIL: 'a@b.co',
+      TRUST_PROXY_HOPS: '0',
     })
     const fetchSpy = vi.fn(async (_url: URL | string) => new Response('[]'))
     vi.stubGlobal('fetch', fetchSpy)

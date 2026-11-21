@@ -1,5 +1,5 @@
 import type { ErrorRequestHandler } from 'express'
-import { NotFoundError, UpstreamError, ValidationError } from '../domain/errors.ts'
+import { MailDeliveryError, NotFoundError, UpstreamError, ValidationError } from '../domain/errors.ts'
 
 // Clients get a fixed message per error type; details stay in the server log.
 export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
@@ -9,7 +9,16 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
     res.status(400).json({ error: { code: 'bad_request', message: 'The request could not be read.' } })
     return
   }
+  if (err?.status === 413) {
+    console.warn(`${req.method} ${req.path} body too large`)
+    res.status(413).json({ error: { code: 'payload_too_large', message: 'That enquiry is too large. Shorten your message and try again.' } })
+    return
+  }
   console.error(`${req.method} ${req.path} failed`, err)
+  if (err instanceof MailDeliveryError) {
+    res.status(502).json({ error: { code: 'enquiry_not_sent', message: 'We could not send your enquiry. Try again in a moment.' } })
+    return
+  }
   if (err instanceof UpstreamError) {
     res.status(502).json({ error: { code: 'upstream_unavailable', message: 'Products are unavailable right now. Try again in a moment.' } })
     return

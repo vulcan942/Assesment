@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { ValidationError } from '../domain/errors.ts'
 import type { CatalogueService } from '../services/catalogue.ts'
+import { idSchema } from './schemas.ts'
 import { toCard, toDetail } from './wire.ts'
 
 const MAX_QUERY = 100
@@ -10,9 +11,6 @@ const querySchema = z
   .trim()
   .transform((s) => s.replace(/\s+/g, ' '))
   .pipe(z.string().min(1).max(MAX_QUERY))
-
-// Word characters and hyphen only: the Fake Store adapter puts the id in a URL path, so ".", ".." and "/" must never reach it.
-const idSchema = z.string().regex(/^[\w-]+$/).max(64)
 
 export function productsRouter(catalogue: CatalogueService) {
   const router = Router()

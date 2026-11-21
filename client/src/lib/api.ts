@@ -1,4 +1,4 @@
-import type { SubmitEnquiry } from './enquiry'
+import { EnquiryError, type EnquiryFieldName, type SubmitEnquiry } from './enquiry'
 import type { Product } from './product'
 
 const BASE_URL = '/api'
@@ -86,11 +86,41 @@ export const searchProducts = (q: string) => request<ProductPage>('/products', {
 
 export const getProduct = (id: string | number) => request<ProductDetail>(`/products/${segment(String(id))}`)
 
-// Resolves on 201, rejects with ApiError otherwise, so the form shows its failure notice.
+const FIELD_NAMES: EnquiryFieldName[] = ['name', 'email', 'phone', 'message', 'product']
+
+// Keeps only keys the form knows, with string values. Undefined when none remain.
+function knownFields(raw: unknown): Partial<Record<EnquiryFieldName, string>> | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const known: Partial<Record<EnquiryFieldName, string>> = {}
+  for (const name of FIELD_NAMES) {
+    const value = (raw as Record<string, unknown>)[name]
+    if (typeof value === 'string') known[name] = value
+  }
+  return Object.keys(known).length > 0 ? known : undefined
+}
+
+// Resolves on 201. Rejects with EnquiryError when the server gave text the form can show
+// (400 fields, 429, 413, enquiry_not_sent), otherwise with the original error.
 export const sendEnquiry: SubmitEnquiry = async (payload) => {
-  await request<{ status: 'sent' }>('/enquiries', undefined, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
+  try {
+    await request<{ status: 'sent' }>('/enquiries', undefined, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+  } catch (error) {
+    if (!(error instanceof ApiError)) throw error
+    if (error.status === 400) {
+      const fields = knownFields(error.fields)
+      // A product-only error has no input to mark, so its text goes in the alert.
+      if (fields) throw new EnquiryError({ fields, message: fields.product })
+    }
+    if (error.status === 404) {
+      throw new EnquiryError({ message: 'We could not find that product. Go back to the catalogue and try again.' })
+    }
+    if (error.status === 429 || error.status === 413 || error.code === 'enquiry_not_sent') {
+      throw new EnquiryError({ message: error.message })
+    }
+    throw error
+  }
 }

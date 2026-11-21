@@ -1,7 +1,8 @@
 import { createApp } from './app.ts'
 import { loadConfig } from './config.ts'
-import { createProductProvider } from './providers/index.ts'
+import { createMailer, createProductProvider } from './providers/index.ts'
 import { createCatalogueService } from './services/catalogue.ts'
+import { createEnquiryService } from './services/enquiry.ts'
 
 let config
 try {
@@ -15,7 +16,8 @@ const catalogue = createCatalogueService({
   provider: createProductProvider(config),
   featuredIds: config.FEATURED_PRODUCT_IDS,
 })
+const enquiry = createEnquiryService({ mailer: createMailer(config), catalogue, salesEmail: config.SALES_EMAIL })
 
-createApp(config, { catalogue }).listen(config.PORT, () => {
+createApp(config, { catalogue, enquiry }).listen(config.PORT, () => {
   console.info(`Server listening on port ${config.PORT}`)
 })
