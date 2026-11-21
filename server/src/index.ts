@@ -1,5 +1,7 @@
 import { createApp } from './app.ts'
 import { loadConfig } from './config.ts'
+import { createProductProvider } from './providers/index.ts'
+import { createCatalogueService } from './services/catalogue.ts'
 
 let config
 try {
@@ -9,6 +11,11 @@ try {
   process.exit(1)
 }
 
-createApp(config).listen(config.PORT, () => {
+const catalogue = createCatalogueService({
+  provider: createProductProvider(config),
+  featuredIds: config.FEATURED_PRODUCT_IDS,
+})
+
+createApp(config, { catalogue }).listen(config.PORT, () => {
   console.info(`Server listening on port ${config.PORT}`)
 })

@@ -6,7 +6,7 @@ const servers: Array<{ close: () => void }> = []
 afterEach(() => servers.splice(0).forEach((s) => s.close()))
 
 function start() {
-  const server = createApp({ CLIENT_ORIGIN: 'http://localhost:5173' }).listen(0)
+  const server = createApp({ CLIENT_ORIGIN: 'http://localhost:5173' }, { catalogue: { getFeatured: async () => [] } }).listen(0)
   servers.push(server)
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`
 }
