@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { EnquiryError } from './enquiry'
 import { ApiError, getCategoryPage, getFeatured, getProduct, searchProducts, sendEnquiry } from './api'
 
 const json = (body: unknown, status = 200) =>
@@ -24,7 +25,7 @@ describe('api', () => {
     stubFetch(async () =>
       json({ error: { code: 'validation_failed', message: 'Check the highlighted fields.', fields: { email: 'Enter a valid email address.' } } }, 400),
     )
-    const error = await sendEnquiry({ name: 'a', email: 'x', message: 'm' }).catch((e: unknown) => e)
+    const error = await getProduct('1').catch((e: unknown) => e)
     expect(error).toBeInstanceOf(ApiError)
     expect(error).toMatchObject({
       status: 400,
@@ -78,5 +79,67 @@ describe('api', () => {
     const init = fn.mock.calls[0][1] as RequestInit
     expect(init.method).toBe('POST')
     expect(init.body).toBe(JSON.stringify(payload))
+  })
+
+  it('sends name, email, phone, message, product and website in the body', async () => {
+    const fn = stubFetch(async () => json({ status: 'sent' }, 201))
+    const payload = {
+      name: 'Ann',
+      email: 'a@b.co',
+      phone: '+44 1',
+      message: 'Hi',
+      product: { id: '7', title: 'T', price: 9 },
+      website: 'x',
+    }
+    await sendEnquiry(payload)
+    expect(JSON.parse((fn.mock.calls[0][1] as RequestInit).body as string)).toEqual(payload)
+  })
+
+  it('rejects with EnquiryError carrying fields for a 400 with fields', async () => {
+    stubFetch(async () => json({ error: { code: 'validation_failed', message: 'Check.', fields: { phone: 'Use digits.' } } }, 400))
+    const error = await sendEnquiry({ name: 'a', email: 'x', message: 'm' }).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(EnquiryError)
+    expect(error).toMatchObject({ fields: { phone: 'Use digits.' } })
+  })
+
+  it('rejects with a not-found message for a 404', async () => {
+    stubFetch(async () => json({ error: { code: 'not_found', message: 'Nope.' } }, 404))
+    const error = await sendEnquiry({ name: 'a', email: 'x', message: 'm' }).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(EnquiryError)
+    expect(error).toMatchObject({ message: 'We could not find that product. Go back to the catalogue and try again.' })
+  })
+
+  it('rejects with a plain ApiError for a 400 with only unknown field keys', async () => {
+    stubFetch(async () => json({ error: { code: 'validation_failed', message: 'Check.', fields: { colour: 'Bad.' } } }, 400))
+    const error = await sendEnquiry({ name: 'a', email: 'x', message: 'm' }).catch((e: unknown) => e)
+    expect(error).not.toBeInstanceOf(EnquiryError)
+    expect(error).toMatchObject({ status: 400 })
+  })
+
+  it('uses the product field text as the message for a product-only 400', async () => {
+    stubFetch(async () => json({ error: { code: 'validation_failed', message: 'Check.', fields: { product: 'That product is not valid.' } } }, 400))
+    const error = await sendEnquiry({ name: 'a', email: 'x', message: 'm' }).catch((e: unknown) => e)
+    expect(error).toMatchObject({ message: 'That product is not valid.', fields: { product: 'That product is not valid.' } })
+  })
+
+  it('rejects with EnquiryError carrying the server message for a 429', async () => {
+    stubFetch(async () => json({ error: { code: 'rate_limited', message: 'Try again in a few minutes.' } }, 429))
+    const error = await sendEnquiry({ name: 'a', email: 'x', message: 'm' }).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(EnquiryError)
+    expect(error).toMatchObject({ message: 'Try again in a few minutes.' })
+  })
+
+  it('rejects with EnquiryError carrying the server message for enquiry_not_sent', async () => {
+    stubFetch(async () => json({ error: { code: 'enquiry_not_sent', message: 'We could not send your enquiry.' } }, 502))
+    await expect(sendEnquiry({ name: 'a', email: 'x', message: 'm' })).rejects.toBeInstanceOf(EnquiryError)
+  })
+
+  it('rejects with a plain ApiError when the network fails', async () => {
+    stubFetch(async () => {
+      throw new TypeError('Failed to fetch')
+    })
+    const error = await sendEnquiry({ name: 'a', email: 'x', message: 'm' }).catch((e: unknown) => e)
+    expect(error).not.toBeInstanceOf(EnquiryError)
+    expect(error).toMatchObject({ status: 0, code: 'network_error' })
   })
 })
