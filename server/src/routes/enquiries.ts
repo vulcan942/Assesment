@@ -2,7 +2,7 @@ import express, { Router } from 'express'
 import { z } from 'zod'
 import { ValidationError } from '../domain/errors.ts'
 import type { EnquiryService } from '../services/enquiry.ts'
-import { createRateLimit } from './rateLimit.ts'
+import { createRateLimit, rateLimitKey } from './rateLimit.ts'
 import { idSchema } from './schemas.ts'
 
 const LIMIT = 5
@@ -37,7 +37,7 @@ export function enquiriesRouter(enquiry: EnquiryService) {
     // Read before validation so a bot sending otherwise invalid data still gets the same 201.
     const website: unknown = (body as { website?: unknown }).website
     if (typeof website === 'string' && website.trim() !== '') {
-      console.warn(`enquiry honeypot hit ip=${req.ip}`)
+      console.warn(`enquiry honeypot hit ip=${rateLimitKey(req.ip ?? 'unknown')}`)
       res.status(201).json({ status: 'sent' })
       return
     }

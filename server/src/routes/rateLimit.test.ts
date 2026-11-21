@@ -5,7 +5,7 @@ import { createRateLimit, rateLimitKey } from './rateLimit.ts'
 afterEach(() => vi.restoreAllMocks())
 
 // Calls the limiter once; returns the status it wrote, or 'next' when the request passed.
-function hit(limiter: ReturnType<typeof createRateLimit>, ip: string) {
+function hit(limiter: ReturnType<typeof createRateLimit>, ip: string | undefined) {
   const headers: Record<string, string> = {}
   let status: number | 'next' = 'next'
   let body: unknown
@@ -73,6 +73,21 @@ describe('rate limiter', () => {
     expect(deleted).toHaveBeenCalledTimes(3)
   })
 
+  it('keeps limiting a busy client after the prune removes an idle one', () => {
+    const { limiter, advance } = setup()
+    hit(limiter, '2.2.2.2')
+    advance(300_000)
+    for (let i = 0; i < 5; i++) hit(limiter, '1.1.1.1')
+    advance(300_001)
+    expect(hit(limiter, '1.1.1.1').status).toBe(429)
+  })
+
+  it('treats a request with no IP as one shared unknown client', () => {
+    const { limiter } = setup()
+    for (let i = 0; i < 5; i++) hit(limiter, undefined)
+    expect(hit(limiter, undefined).status).toBe(429)
+  })
+
   it('does not rescan the clients on every request inside one window', () => {
     const { limiter, advance } = setup()
     hit(limiter, '1.1.1.1')
@@ -111,7 +126,24 @@ describe('rateLimitKey', () => {
     ['2001:db8::5', '2001:db8:0:0::/64'],
     ['::1', '0:0:0:0::/64'],
     ['fe80::1%eth0', 'fe80:0:0:0::/64'],
+    ['2001:DB8:ABCD:1::5', '2001:db8:abcd:1::/64'],
+    ['::', '0:0:0:0::/64'],
+    ['1::', '1:0:0:0::/64'],
+    ['1:2:3:4:5:6:7::', '1:2:3:4::/64'],
+    ['2001:db8:0:1::5', '2001:db8:0:1::/64'],
+    ['2001:DB8::1%eth0', '2001:db8:0:0::/64'],
+    ['::ffff:1.2.3.4%eth0', '1.2.3.4'],
+    ['::ffff:0102:0304', '1.2.3.4'],
+    ['::FFFF:0102:0304', '1.2.3.4'],
+    ['::ffff:0102:0304%eth0', '1.2.3.4'],
+    ['garbage:::x', 'garbage:::x'],
+    ['a:b', 'a:b'],
   ])('maps %s to %s', (ip, key) => {
     expect(rateLimitKey(ip)).toBe(key)
+  })
+
+  it('returns a 100000-character string unchanged without throwing', () => {
+    const long = 'a:'.repeat(50_000)
+    expect(rateLimitKey(long)).toBe(long)
   })
 })

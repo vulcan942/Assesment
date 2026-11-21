@@ -163,6 +163,18 @@ describe('POST /api/enquiries', () => {
     })
   })
 
+  it('logs a mail failure once with the masked email and product id but no name, phone or message', async () => {
+    const { url } = start({ mailFails: new Error('smtp down') })
+    const res = await post(url, { ...valid, phone: '020 7946 0000', message: 'Secret question', product: { id: 7 } })
+    expect(res.status).toBe(502)
+    const errors = vi.mocked(console.error).mock.calls
+    expect(errors).toHaveLength(1)
+    const text = errors[0]!.map((a) => (a instanceof Error ? a.message : String(a))).join(' ')
+    expect(text).toContain('jo***@example.com')
+    expect(text).toContain('product=7')
+    for (const secret of ['Jo Smith', '020 7946 0000', 'Secret question']) expect(text).not.toContain(secret)
+  })
+
   it('does not leak the mailer error text to the client', async () => {
     const { url } = start({ mailFails: new Error('smtp password rejected') })
     expect(await (await post(url, valid)).text()).not.toContain('password')
