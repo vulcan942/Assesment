@@ -79,10 +79,14 @@ export const getFeatured = () => request<Product[]>('/products/featured')
 
 export const getCategories = () => request<string[]>('/categories')
 
-export const getCategoryPage = (category: string) =>
-  request<CategoryPage>(`/categories/${segment(category)}/products`)
+// Page 1 is the server default, so the param is only sent after it.
+const pageParam = (page?: number) => (page !== undefined && page > 1 ? page : undefined)
 
-export const searchProducts = (q: string) => request<ProductPage>('/products', { q })
+export const getCategoryPage = (category: string, page?: number) =>
+  request<CategoryPage>(`/categories/${segment(category)}/products`, { page: pageParam(page) })
+
+export const searchProducts = (q: string, page?: number) =>
+  request<ProductPage>('/products', { q, page: pageParam(page) })
 
 export const getProduct = (id: string | number) => request<ProductDetail>(`/products/${segment(String(id))}`)
 

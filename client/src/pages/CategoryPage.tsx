@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { Info } from 'lucide-react'
+import { Pagination } from '@/components/Pagination'
 import { ProductGrid } from '@/components/ProductGrid'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { parsePage } from '@/lib/parsePage'
+import { usePagedFocus } from '@/lib/usePagedFocus'
 import { ApiError, getCategoryPage, type CategoryPage as CategoryData } from '@/lib/api'
 import type { Product } from '@/lib/product'
 
@@ -13,19 +17,23 @@ type State =
 const h1Class = 'mb-6 text-heading-lg font-bold first-letter:uppercase'
 const h2Class = 'mb-4 text-xl leading-7 font-semibold'
 
-// Keyed by category so navigating between categories resets to loading without setState in the effect.
+// Keyed by category and page so navigating between them resets to loading without setState in the effect.
 export function CategoryPage() {
   const { category = '' } = useParams()
-  return <CategoryContent key={category} category={category} />
+  const [params] = useSearchParams()
+  const page = parsePage(params.get('page'))
+  return <CategoryContent key={`${category}:${page}`} category={category} page={page} />
 }
 
-function CategoryContent({ category }: { category: string }) {
+function CategoryContent({ category, page }: { category: string; page: number }) {
   const navigate = useNavigate()
+  const h1Ref = usePagedFocus()
   const [state, setState] = useState<State>({ status: 'loading' })
+  const to = (n: number) => `/categories/${encodeURIComponent(category)}${n > 1 ? `?page=${n}` : ''}`
 
   useEffect(() => {
     let cancelled = false
-    getCategoryPage(category).then(
+    getCategoryPage(category, page).then(
       (data) => !cancelled && setState({ status: 'ready', data }),
       (err: unknown) =>
         !cancelled && setState({ status: err instanceof ApiError && err.status === 404 ? 'not-found' : 'error' }),
@@ -33,7 +41,7 @@ function CategoryContent({ category }: { category: string }) {
     return () => {
       cancelled = true
     }
-  }, [category])
+  }, [category, page])
 
   useEffect(() => {
     document.title = `${category} - Catalogue`
@@ -45,7 +53,9 @@ function CategoryContent({ category }: { category: string }) {
   if (state.status === 'not-found') {
     return (
       <>
-        <h1 className={h1Class}>Category not found</h1>
+        <h1 ref={h1Ref} tabIndex={-1} className={h1Class}>
+          Category not found
+        </h1>
         <Alert>
           <Info />
           <AlertDescription>We could not find that category. Choose one from the menu.</AlertDescription>
@@ -65,9 +75,22 @@ function CategoryContent({ category }: { category: string }) {
   )
 
   let body
+  let pager = null
   if (state.status !== 'ready') {
     body = <ProductGrid products={[]} status={state.status} onEnquire={onEnquire} />
-  } else if (state.data.topRated.length === 0 && state.data.products.length === 0) {
+  } else if (page > 1 && state.data.products.length === 0) {
+    body = (
+      <>
+        <Alert>
+          <Info />
+          <AlertDescription>That page does not exist.</AlertDescription>
+        </Alert>
+        <Button asChild className="mt-4">
+          <Link to={to(1)}>Go to the first page</Link>
+        </Button>
+      </>
+    )
+  } else if (page === 1 && state.data.topRated.length === 0 && state.data.products.length === 0) {
     body = (
       <ProductGrid
         products={[]}
@@ -77,7 +100,7 @@ function CategoryContent({ category }: { category: string }) {
       />
     )
   } else {
-    const { topRated, products } = state.data
+    const { topRated, products, pageSize, total } = state.data
     body = (
       <div className="flex flex-col gap-8 min-[960px]:gap-12">
         {topRated.length > 0 && (
@@ -98,12 +121,16 @@ function CategoryContent({ category }: { category: string }) {
         )}
       </div>
     )
+    pager = <Pagination page={page} pageSize={pageSize} total={total} to={to} />
   }
 
   return (
     <>
-      <h1 className={h1Class}>{category}</h1>
+      <h1 ref={h1Ref} tabIndex={-1} className={h1Class}>
+        {category}
+      </h1>
       {body}
+      {pager}
     </>
   )
 }
