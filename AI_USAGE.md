@@ -44,6 +44,12 @@ Setup issues 1 to 7 first (repo hygiene, server scaffold, design system wiring, 
 - Issue 15, design: the designer deviated on whitespace between the task and `design.md` (trim versus collapse). It was settled as: the client trims only and the server collapses.
 - Issue 15, review: a reviewer said Tailwind `mb-6` is 32px. It is 24px. I checked the arithmetic before acting and made no change.
 - Issue 15, docs: an agent edit to `docs/DECISIONS.md` changed the line endings of the #14 bullets and made them show as changed. The original line endings were restored so the diff shows only new lines.
+- Issue 16, spec: the spec-analyst did not read `docs/ARCHITECTURE.md` or `docs/PRODUCT.md`. The architect found that `ARCHITECTURE.md` planned the id schema as `min(1).max(32)` while the other docs said a regex. It was caught by the architect's re-verification, and `ARCHITECTURE.md` now matches (`regex(/^[\w-]+$/).max(64)`).
+- Issue 16, server: `encodeURIComponent('..')` leaves `..` unchanged, so the adapter's encoding alone did not stop path traversal. The backend builder's own test caught it; the adapter now rejects ids that fail `/^[\w-]+$/`.
+- Issue 16, client: the frontend builder repeated the Tailwind spacing mistake from #13 (`gap-5` for `space-5`, `gap-7` for `space-7`; the Tailwind step is 4px, so those are 20px and 28px, not 24px and 48px). The design-reviewer caught it and the arithmetic confirmed it.
+- Issue 16, client: `first-letter` does not render on a flex element, so the category label was not uppercased. A class-name test could not catch it; the design-reviewer did. The text is now in an inner span.
+- Issue 16, tests: a `document.title` assertion failed once and did not reproduce in about 30 runs. The code reviewer found the root cause: the title is set in a passive effect, so the test raced it. Tests now `waitFor` the title.
+- Issue 16, server: the id was trimmed before the regex, so a padded id like ' 7 ' would be accepted. The reviewer caught it; ids are not trimmed and a padded id is a 400.
 
 ## Time spent
 

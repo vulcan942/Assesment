@@ -2,15 +2,16 @@
 
 UI design for the catalogue PoC. Built only from `design-system/` components and the rulings in `docs/design-gaps.md`. Token names only; no raw colours, sizes or fonts.
 
-Scope of this version: **issue 13 (home, featured products)**, **issue 14 (category nav and category page)** and **issue 15 (search bar and results page)**. Other screens are added by later issues.
+Scope of this version: **issue 13 (home, featured products)**, **issue 14 (category nav and category page)**, **issue 15 (search bar and results page)** and **issue 16 (product page with the enquiry dialog)**. Other screens are added by later issues.
 
 | Screen | Route | Status |
 | --- | --- | --- |
 | Home | `/` | Designed below |
 | Category | `/categories/:category` | Designed below |
 | Search results | `/search?q=` | Designed below (with the search bar) |
-| Product detail | `/products/:id` | Later issue (placeholder route until then) |
-| Enquiry form and thank-you | on product detail | Later issue |
+| Product detail | `/products/:id` | Designed below (Product page) |
+| Enquiry form and thank-you | dialog on the product page | Designed below (Product page, enquiry dialog). Sending needs `POST /enquiries` from #17; until then the failure state shows. |
+| Not found (catch-all) | `*` | Designed below |
 
 ## App layout (shared by every page)
 
@@ -30,6 +31,9 @@ RootLayout (router root element)
 - `main` vertical padding: `space-6` top and bottom below 960px, `space-8` from 960px.
 - Brand link: at least `touch-target` tall, 2px `focus` outline with 2px offset, no underline change on hover beyond `accent` text. Text is "Catalogue". No logo. The category nav (issue 14) and search bar (issue 15) are the other two header children.
 - Page background `surface`.
+- Heading rule: each page has one `h1` except Home and the catch-all not-found page (open gaps, below; not fixed here). Sections are `h2`, card titles `h3`. The product page has an `h1` only (no `h2`) in its ready state.
+- Document title: `Catalogue` by default; pages that set their own reset it on leave.
+- Page-level shared parts used by the product page: `Link` (react-router) with the 44px tap area and 2px `focus` outline with 2px offset, `Alert` (`info`, `success`, `destructive`), `Button`, `Dialog`. No other new parts.
 
 ## Home
 
@@ -76,7 +80,7 @@ ProductCard(product, onEnquire, renderTitle?)
 
 - The title is the link to `/products/:id` (`product.id` as given). Hover shows an underline in `accent`; focus is the 2px `focus` outline with 2px offset. Do not make the whole card a link: the `Enquire` button sits inside it and nested interactive elements are invalid.
 - `Enquire` is the only action. There is no cart, buy, wishlist or quantity UI.
-- `onEnquire` on home: the product page holds the enquiry form and does not exist yet, so `HomePage` passes a handler that navigates to `/products/:id`. `onEnquire` stays required. When the enquiry issue lands, that page opens the form. Ruled in design-gaps, request 2 (resolved).
+- `onEnquire` on home: the product page holds the enquiry form, so `HomePage` passes a handler that navigates to `/products/:id` (built in #16). `onEnquire` stays required; the product page opens the form. Ruled in design-gaps, request 2 (resolved).
 - Card chrome unchanged: `border` hairline, `shadow-card`, `shadow-raised` on hover, `radius-lg`, `space-4` body padding.
 
 ### States
@@ -414,9 +418,130 @@ Straight double quotes around the term. Sentence case, no exclamation marks.
 | No-term body | Enter a word to search for. |
 | Document title | Search - Catalogue |
 
-## Not found
+## Product page
 
-Temporary until the product page issue (#16) lands. Home cards and `Enquire` currently land here.
+Route `/products/:id`. Rendered inside `RootLayout > main`. Composed in `client/src/pages/ProductPage.tsx`; no `ProductDetail` component (ruled in design-gaps, issue 16). The card title link and `Enquire` on home, category and search all land here.
+
+### Component tree
+
+```
+ProductPage
+  (inside RootLayout > main)
+  status "ready":
+    Link to="/"  "Back to products"                  t-label, accent, underline on hover
+    div (two-column block from 600px)
+      div  image well                                 aspect-square, surface-muted, space-5 padding
+        img  src=image alt=title                      contained, never cropped
+        [no image, or load error]  span "No image"    t-body-sm, ink-muted
+      div  text column                                stack, gap space-4
+        Link to="/categories/{encodeURIComponent(category)}"   category, first letter uppercased by CSS (first-letter on an inner span), t-caption, accent   (hidden when missing)
+        h1                                            title, t-heading-lg, ink
+        p                                             price via formatPrice, t-price, ink     (hidden when missing)
+        p                                             description, t-body, ink                (hidden when missing)
+        Dialog
+          DialogTrigger asChild > Button "Enquire"    primary, one per page
+          DialogContent
+            DialogHeader (right padding space-7 so the title clears the close button) > DialogTitle   "Enquire about {title}"
+            EnquiryForm(product, onSubmit=sendEnquiry, onCancel=close dialog, onDone=navigate to "/")
+  status "loading":
+    div role="status" aria-busy="true" aria-label="Loading product"
+      same two-column block with placeholders (no Link, no text)
+  status "error" (network, 5xx, anything not 404 or id 400):
+    Alert variant="destructive" > AlertTitle + AlertDescription
+    Button variant="secondary" "Try again"            re-runs getProduct(id)
+  status "not-found" (ApiError 404, or 400 with fields.id):
+    h1 "We could not find that product."
+    p  body
+    Link to="/"  "Go to the catalogue"
+```
+
+- Data: `ProductPage` calls `getProduct(id)` from `api.ts` with the route `:id` as given. It does not sort, trim or reshape. Not-found is decided by the `ApiError` type and status, never message text. The person cannot tell a 404 from a malformed id, so both show the same state.
+- `Enquire` is the only product action. No cart, buy, wishlist or quantity UI. Price shows as `formatPrice` gives it, no "from" or sale wording.
+- `Enquire` is primary because it is the only action on the page. `Send enquiry` in the dialog is also primary, but the dialog covers the page, so two primaries are never visible together.
+- Image fallback is the `ProductCard` one: `alt` is the title, "No image" shows when `image` is missing or fails to load. Duplicated here, not extracted (design-gaps).
+- `onDone` navigates to `/` so the "Back to products" label in the success state stays true. `onCancel`, `Escape` and the close button close the dialog; focus returns to `Enquire` (Radix, via `DialogTrigger asChild`).
+- The dialog holds only `EnquiryForm` and its `DialogTitle`. No `DialogDescription` (the form is its own description) unless Radix warns.
+- Dialog chrome comes from `components/ui/dialog.tsx` as it stands: `radius-lg`, `border` hairline, `surface` fill, `space-5` padding, `space-4` between title and form. The dialog's width and button-row breakpoints follow the 600px breakpoint of this page (not Tailwind `sm`). Stock scrim and maximum width are not tokens; see the notes at the end of the issue 16 section in `docs/design-gaps.md`.
+
+### Layout
+
+Breakpoints 600px and 960px only.
+
+| Width | Layout |
+| --- | --- |
+| Below 600px | One column: back link, image well, then text column. Container padding `space-4`. Image well full width, square. `space-4` between back link and block, `space-5` between image well and text. `Enquire` full width. Dialog fills the width less the stock edge margin; form fields and buttons stack full width. |
+| 600px to 959px | Container padding `space-6`. Two equal columns (image left, text right), gap `space-5`, aligned to the top. Image column never narrower than `card-min`. `Enquire` natural width, left aligned. Dialog at its stock maximum width, centred; form buttons in one row, right aligned. |
+| 960px and up | `main` top and bottom `space-8`. Same two equal columns, within `container-max`, gap `space-7`. Image well stays square, so it grows with its column. Section gap to the back link `space-5`. |
+
+- Image well: `surface-muted`, `radius-lg`, `space-5` padding around the image (README: padding around product images). The image is contained, never cropped, never upscaled past the well.
+- Text column: stack gap `space-4`; the category line sits `space-2` above the title; `Enquire` sits `space-5` below the last text.
+- Long titles and descriptions wrap (`overflow-wrap: anywhere` on the title) and never truncate; no horizontal scroll at 320px.
+- Targets: back link, category link, `Enquire`, `Try again`, "Go to the catalogue" and every dialog control are at least `touch-target` (44px) tall. Focus is a 2px `focus` outline with 2px offset on every one, never removed. The dialog's stock close button must also reach `touch-target`; builder to check.
+
+### States
+
+| State | What the user sees |
+| --- | --- |
+| Loading | Wrapper `role="status"` with `aria-busy="true"` and the accessible name "Loading product". Placeholder image well (`surface-muted`, square) and text bars (`surface-muted`, `radius-sm`, title bar taller, then price, then two description bars). No heading, no links, no `Enquire`, no spinner, no animation. Same two-column layout as ready, so the page does not jump. `document.title` is `Catalogue`. |
+| Ready | As the tree. Missing category, price or description hides only that line. |
+| Error | Back link is not shown. `Alert` destructive with the alert glyph, title "Product did not load", body "Check your connection and try again.", then a secondary `Button` "Try again" below it. Announced with `role="alert"`. "Try again" returns to loading and calls `getProduct(id)` again. `document.title` `Catalogue`. |
+| Not found | `h1` "We could not find that product." (`t-heading-lg`), body `p` "It may have been removed. Browse the catalogue to find something else." (`t-body`, `ink`), link "Go to the catalogue" underlined, to `/`. Header nav and search stay as other ways out. `document.title` "Product not found - Catalogue". |
+
+### Enquire dialog states
+
+The dialog is `EnquiryForm` as built; this section only states what the person sees.
+
+| State | What the user sees |
+| --- | --- |
+| Closed | Page as ready. Focus is on `Enquire` after any close. |
+| Idle | `DialogTitle` "Enquire about {title}". Product summary on `surface-muted` (`radius-md`, `space-4` padding): title (`t-label`), category (`t-caption`, `ink-muted`), price (`t-price`). Fields in a stack with gap `space-4`: "Your name", "Email", "Phone (optional)", "Message" (prefilled "I am interested in {title}."). Each has a visible `Label`, `space-1` to its field, 16px text, at least `touch-target` tall, `border-control` border. Buttons: "Cancel" (secondary) and "Send enquiry" (primary). Below 600px they stack, "Send enquiry" on top; from 600px they sit in one row, right aligned, `space-2` apart. |
+| Validation | On submit, empty name, invalid email or empty message shows an instruction under that field in `danger`, `t-body-sm`, with the alert glyph, field border `danger`, `aria-invalid` and `aria-describedby` on the field. Focus moves to the first invalid field. Nothing is sent. Messages: "Enter your name.", "Enter a valid email address.", "Enter a message." Phone is never invalid. |
+| Sending | "Send enquiry" reads "Sending…" and both buttons are disabled (`surface-muted` fill, `ink-muted` text). No spinner, no animation. Fields keep their values. |
+| Failure | `Alert` destructive above the buttons, title "Enquiry not sent", body "Your enquiry was not sent. Check your connection and try again." Fields keep their values and the buttons are enabled again. Until #17 adds `POST /enquiries`, every submit that passes validation ends here; the form never reports success unless the send resolved. |
+| Success | The form is replaced by an `Alert` success with the check glyph, title "Enquiry sent", body "Thank you. We will reply by email.", and a primary `Button` "Back to products" that calls `onDone` and navigates to `/`. The dialog title stays "Enquire about {title}" and the close button still works; closing leaves the person on the product page, which is accepted. |
+
+### Responsive and a11y notes
+
+- Landmarks: `header` (nav, search), `main`. The dialog is a Radix `dialog` with focus trap, `Escape` to close and the title as its name.
+- Heading order: `h1` only on the page; the dialog title is the dialog's own name, not an outline heading.
+- Order of tab stops after the header: back link, category link, `Enquire`. Inside the open dialog: close, name, email, phone, message, Cancel, Send enquiry.
+- Images: `alt` is the product title. State is never colour alone (glyph, title and words on every alert).
+- Document title: `{title} - Catalogue` when ready, `Product not found - Catalogue` for not found, `Catalogue` while loading and on error; reset on leave.
+
+### Copy
+
+Sentence case, plain, no exclamation marks, no emoji, no sales words.
+
+| Where | Text |
+| --- | --- |
+| Back link | Back to products |
+| Category link | Category as the server gives it, first letter uppercased by CSS |
+| Title (h1) | Product title as given |
+| Price | `formatPrice` output |
+| Description | As given |
+| Primary action | Enquire |
+| Image missing | No image |
+| Loading label (accessible only) | Loading product |
+| Error title | Product did not load |
+| Error body | Check your connection and try again. |
+| Retry button | Try again |
+| Not-found title (h1) | We could not find that product. |
+| Not-found body | It may have been removed. Browse the catalogue to find something else. |
+| Not-found link | Go to the catalogue |
+| Dialog title | Enquire about {title} |
+| Field labels | Your name, Email, Phone (optional), Message |
+| Prefilled message | I am interested in {title}. |
+| Validation | Enter your name. / Enter a valid email address. / Enter a message. |
+| Dialog buttons | Cancel, Send enquiry, Sending… |
+| Failure title and body | Enquiry not sent. Your enquiry was not sent. Check your connection and try again. |
+| Success title and body | Enquiry sent. Thank you. We will reply by email. |
+| Success button | Back to products |
+| Document titles | {title} - Catalogue; Product not found - Catalogue |
+
+## Not found (catch-all)
+
+`NotFoundPage` stays as the `*` catch-all for URLs that match no route. It is not used for products (the product page has its own not-found state).
 
 - Heading (h2): "This page does not exist."
 - Link: "Go to the catalogue", underlined, goes to `/`.
+- Open gap, same as Home: this page has no `h1`. Not part of #16.

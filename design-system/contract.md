@@ -24,7 +24,17 @@ Map the Fake Store API (`/products`) like this, in one function at the edge of t
 | `image` | `image` |
 | `category` | `category` |
 
-Ignore `description` and `rating` until the real product metadata exists. A future source needs only another mapper that returns `Product`.
+Ignore `rating` (the server uses it for ranking only). List endpoints also omit `description`.
+
+`GET /products/:id` returns the product detail shape: `Product` plus an optional `description`. The product page shows it when present and hides that section when it is missing.
+
+```ts
+interface ProductDetail extends Product {
+  description?: string;  // plain text, shown as given
+}
+```
+
+A future source needs only another mapper that returns `Product`.
 
 Category links come from `GET /categories`. There is no "All" chip, and the client never derives categories from loaded products.
 

@@ -115,12 +115,12 @@ Server pieces:
   - `getCategoryPage(category): Promise<{ topRated: Product[]; products: Product[] }>`. Steps: `listCategories()`, exact case-sensitive match, else `throw new NotFoundError`; then `provider.list()`, filter `p.category === category`, sort, `topRated = sorted.slice(0, TOP_RATED_COUNT)`, `products = sorted.slice(TOP_RATED_COUNT)`. `TOP_RATED_COUNT = 3` is a constant in this file.
   - Ranking lives here only, using `rating` from the domain `Product`: rating descending, missing last, ties by id ascending with numeric-aware `localeCompare`. The service returns domain `Product`s; it knows nothing about `page`.
 - Routes (layering unchanged: route -> service):
-  - `routes/products.ts` keeps `/products/featured` and later `/products/:id`.
+  - `routes/products.ts` keeps `/products/featured` and `/products/:id` (added in #16, registered after `/products/featured`).
   - New `routes/categories.ts` exports `categoriesRouter(catalogue)` with both category routes; `app.ts` mounts it under `/api`. It builds `{ topRated, products, page: 1, pageSize: products.length, total: products.length }`, since paging fields are response shaping, not business logic. #18 moves them to the service.
   - New `routes/wire.ts` exports `toCard(product): WireProduct` (picks `id, title, price, image, category`). `products.ts` and `categories.ts` both use it, so the "no rating or description on the wire" rule has one home. Replace the inline map in `products.ts`.
 - Param validation (zod, in the route file, before the service call; failure -> `ValidationError` -> 400):
   - `category`: `z.string().trim().min(1).max(64)`. Express has already decoded it. No character whitelist; it is only compared against the provider list.
-  - Product id schema (for `/products/:id`, issue 15, defined next to `toCard` in `routes/wire.ts` or the products route): `z.string().trim().min(1).max(32)` and reject `.` and `..`, because the Fake Store adapter puts the id into a URL path and those would resolve to a different upstream resource (#12 reminder). Added when the first route needs it; featured ids come from config and are not affected.
+  - Product id schema: see "Product endpoint wiring (issue 16)". It replaces the earlier `min(1).max(32)` plan.
 - Tests: service against a fake provider (top 3 order, missing rating last, tie order, unknown category throws `NotFoundError`, empty category); route tests for 200 shape with no `rating`, 404 shape, 400 on empty/over-long category, 502 on `UpstreamError`.
 - Client: `api.ts` gains `getCategories()` and `getCategoryPage(category)` (applies `encodeURIComponent`). No other module calls `fetch`.
 
@@ -130,11 +130,23 @@ Assumptions are in `docs/DECISIONS.md` (#15). Final contract:
 
 - `GET /api/products?q=term` -> `200 { products: Product[], page: 1, pageSize: products.length, total: products.length }`. Wire `Product` via `toCard` (no `description`, no `rating`). `page` and `pageSize` params are ignored until #18. No match -> 200 with an empty list, not 404.
 - Invalid `q` (missing, empty or whitespace-only, over 100 chars after trimming) -> `400 { error: { code: 'validation_failed', message: 'Check the highlighted fields.', fields: { q: '<message>' } } }`, the shared shape from section 6. Suggested `fields.q`: "Enter a word to search for." (empty) and "Use 100 characters or fewer." (too long). `bad_request` is only for unreadable requests.
-- Route (`routes/products.ts`): `router.get('/products', ...)` registered next to `/products/featured`. They do not collide (different paths); `/products/:id`, when added, still goes after `/products/featured`. Zod schema in the route file: `z.string().trim().transform(s => s.replace(/\s+/g, ' ')).pipe(z.string().min(1).max(100))`. On failure the route throws `ValidationError({ q })` with the message above; the route never calls a provider.
+- Route (`routes/products.ts`): `router.get('/products', ...)` registered next to `/products/featured`. They do not collide (different paths); `/products/:id` (added in #16) goes after `/products/featured`. Zod schema in the route file: `z.string().trim().transform(s => s.replace(/\s+/g, ' ')).pipe(z.string().min(1).max(100))`. On failure the route throws `ValidationError({ q })` with the message above; the route never calls a provider.
 - Service: `CatalogueService.search(term: string): Promise<Product[]>`. Calls `provider.list()`, keeps products where `title` or `description` lowercased `.includes` the lowercased term, in provider order, no ranking. It receives the already-normalised term and returns domain `Product`s. Search stays in the service so it works with any provider.
 - Route shapes the response: `{ products: products.map(toCard), page: 1, pageSize: n, total: n }` (as for categories; #18 moves paging into the service).
 - Tests: service against a fake provider (title match, description match, case-insensitive, provider order, no match -> `[]`); route tests (200 shape without `description`/`rating`, 400 with `fields.q` for missing, empty, whitespace and 101 chars, whitespace collapsed before matching, 502 on `UpstreamError`).
 - Client: `api.ts` gains `searchProducts(q)`. It builds the query string with `URLSearchParams` inside `request()` and has no paging options until #18. `SearchBar` (which uses `encodeURIComponent` to build the `/search?q=` URL) and `SearchPage` are client-side only: they navigate and fetch through `api.ts`. `RootLayout` reads `q` so the header field shows the current term.
+
+### Product endpoint wiring (issue 16)
+
+Assumptions are in `docs/DECISIONS.md` (#16).
+
+- `GET /api/products/:id` -> `200 ProductDetail` = `{ id, title, price?, image?, category?, description? }`. No `rating`.
+- Id schema in `routes/products.ts`: `z.string().trim().regex(/^[\w-]+$/).max(64)`. The regex rejects empty, `.`, `..`, `/` and `%`, which matters because the Fake Store adapter puts the id in a URL path. Failure -> `ValidationError({ id: 'That product link is not valid.' })` -> `400 validation_failed`. Not digits-only, so another provider's id format still works.
+- Service: `CatalogueService.getProduct(id): Promise<Product>` calls `provider.getById(id)`; `null` -> `throw new NotFoundError(...)` -> `404 { error: { code: 'not_found', message: 'We could not find that.' } }`. `UpstreamError` propagates (502).
+- `routes/wire.ts` gains `toDetail(product): WireProductDetail` next to `toCard` (`toCard` fields plus `description`; still no `rating`). `description` is omitted from the JSON when absent. The "what goes on the wire" rule stays in this one file.
+- Registration order in `routes/products.ts`: `/products/featured`, then `/products`, then `/products/:id`.
+- Tests: service (found; `null` -> `NotFoundError`); route (200 shape has `description` and no `rating`, 400 for `..`, `a.b` and 65 chars, 404 shape, 502); `toDetail` drops `rating`.
+- Client: `getProduct(id)` already exists in `api.ts`. `ProductPage` passes `sendEnquiry` from `api.ts` to `EnquiryForm` as `onSubmit` (see `docs/design-gaps.md`).
 
 ### Service responsibilities
 
@@ -158,7 +170,7 @@ Read-only `GET` for catalogue data and one `POST` for enquiries. All under `/api
 Response shapes:
 
 - `Product` is the design-system shape from `design-system/contract.md`: `id, title, price?, image?, category?`. The server drops `rating` and `description` here.
-- `ProductDetail` is `Product` plus `description?`. See open decision 1.
+- `ProductDetail` is `Product` plus `description?` (settled in `DECISIONS.md`; `contract.md` updated). `rating` is never sent.
 - `topRated` is not paginated; `products` holds the additional items and is paginated.
 
 Errors share one shape and the right status:
@@ -170,7 +182,7 @@ Errors share one shape and the right status:
 | Status | When |
 | --- | --- |
 | 400 | Invalid body, query or path param (`fields` present), or an unreadable request such as bad percent-encoding (`bad_request`) |
-| 404 | Unknown product or category |
+| 404 | Unknown product or category (well-formed id/name the source does not know) |
 | 502 | Product source failed |
 | 502 | Enquiry email could not be delivered (customer is told it failed, nothing is reported as sent) |
 | 500 | Anything unexpected, with a generic message |
@@ -187,7 +199,7 @@ client/src/
   lib/                format, enquiry types, other helpers
   components/ui/      shadcn components (the design system)
   components/         product-aware components (ProductCard, ProductGrid, CategoryNav, EnquiryForm, ...)
-  pages/              planned: Home, Category, Search, Product (Home and Category are done, the rest come later); each handles loading, error, empty. NotFoundPage is a temporary placeholder that also handles /products/:id until the product page (#16) lands
+  pages/              Home, Category, Search and Product (all done); each handles loading, error, empty. `ProductPage` (`/products/:id`) also holds the Enquire button and the enquiry dialog around `EnquiryForm`. `NotFoundPage` is the `*` catch-all
   index.css           design tokens as CSS variables, the only home of colours
 ```
 
