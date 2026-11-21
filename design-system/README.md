@@ -39,6 +39,6 @@ There is no icon set. The four glyphs in use (check, success, alert, info) are s
 - `Field`: labelled input or textarea with hint and error.
 - `Chip` and `ChipGroup`: category filter toggles.
 - `Notice`: info, success and danger messages.
-- `ProductCard`: one product with an `Enquire` action.
-- `ProductGrid`: responsive grid with loading and empty states.
+- `ProductCard`: one product with an `Enquire` action. Optional `renderTitle(product)` replaces the plain title text, so a page can make it a link without the card knowing the router.
+- `ProductGrid`: responsive grid with loading, error and empty states. Optional `renderTitle` is passed to each card. Optional `errorTitle`, `errorBody`, `emptyTitle` and `emptyBody` override the default notice copy.
 - `EnquiryForm`: the lead-capture form, delivery-agnostic.

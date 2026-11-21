@@ -10,8 +10,7 @@ const rules = [
   { name: 'raw hex colour outside the theme', pattern: /#[0-9a-fA-F]{3,8}\b/, skip: (f) => f === theme },
   // shadcn primitives set CSS variables (not colours) through style; they are generated code.
   { name: 'inline style outside the theme', pattern: /\bstyle=\{\{/, skip: (f) => f.startsWith(`components${sep}ui${sep}`) },
-  // ponytail: placeholder data until the client loads products from the API; delete this skip then.
-  { name: 'Fake Store host in client', pattern: /fakestoreapi/i, skip: (f) => f === join('data', 'sampleProducts.ts') },
+  { name: 'Fake Store host in client', pattern: /fakestoreapi/i, skip: () => false },
   { name: 'import from server/', pattern: /from\s+['"][^'"]*\bserver\//, skip: () => false },
   { name: 'raw fetch( outside lib/api.ts', pattern: /\bfetch\(/, skip: (f) => f === apiModule },
 ]

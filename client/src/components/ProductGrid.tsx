@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { AlertCircle, Info } from 'lucide-react'
 import { ProductCard } from '@/components/ProductCard'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -9,14 +10,29 @@ interface ProductGridProps {
   status: 'loading' | 'error' | 'ready'
   currency?: string
   onEnquire: (product: Product) => void
+  renderTitle?: (product: Product) => ReactNode
+  errorTitle?: string
+  errorBody?: string
+  emptyTitle?: string
+  emptyBody?: string
 }
 
-const gridClass = 'grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-6'
+const gridClass = 'grid grid-cols-[repeat(auto-fill,minmax(var(--card-min),1fr))] gap-6'
 
-export function ProductGrid({ products, status, currency, onEnquire }: ProductGridProps) {
+export function ProductGrid({
+  products,
+  status,
+  currency,
+  onEnquire,
+  renderTitle,
+  errorTitle = 'Products did not load',
+  errorBody = 'Check your connection and refresh the page to try again.',
+  emptyTitle = 'No products found',
+  emptyBody = 'Choose another category to see more products.',
+}: ProductGridProps) {
   if (status === 'loading') {
     return (
-      <div className={gridClass} aria-busy="true" aria-label="Loading products">
+      <div className={gridClass} role="status" aria-busy="true" aria-label="Loading products">
         {Array.from({ length: 8 }, (_, i) => (
           <Card key={i} className="gap-0 py-0" aria-hidden="true">
             <div className="aspect-square bg-muted" />
@@ -35,8 +51,8 @@ export function ProductGrid({ products, status, currency, onEnquire }: ProductGr
     return (
       <Alert variant="destructive">
         <AlertCircle />
-        <AlertTitle>Products did not load</AlertTitle>
-        <AlertDescription>Check your connection and refresh the page to try again.</AlertDescription>
+        <AlertTitle>{errorTitle}</AlertTitle>
+        <AlertDescription>{errorBody}</AlertDescription>
       </Alert>
     )
   }
@@ -45,8 +61,8 @@ export function ProductGrid({ products, status, currency, onEnquire }: ProductGr
     return (
       <Alert>
         <Info />
-        <AlertTitle>No products found</AlertTitle>
-        <AlertDescription>Choose another category to see more products.</AlertDescription>
+        <AlertTitle>{emptyTitle}</AlertTitle>
+        <AlertDescription>{emptyBody}</AlertDescription>
       </Alert>
     )
   }
@@ -55,7 +71,7 @@ export function ProductGrid({ products, status, currency, onEnquire }: ProductGr
     <ul className={gridClass}>
       {products.map((product) => (
         <li key={product.id} className="flex">
-          <ProductCard product={product} currency={currency} onEnquire={onEnquire} />
+          <ProductCard product={product} currency={currency} onEnquire={onEnquire} renderTitle={renderTitle} />
         </li>
       ))}
     </ul>
