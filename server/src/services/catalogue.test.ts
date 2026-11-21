@@ -89,6 +89,47 @@ describe('getCategoryPage', () => {
   })
 })
 
+const item = (id: string, title: string, description?: string): Product => ({ id, title, description })
+const search = (products: Product[], term: string) =>
+  createCatalogueService({ provider: fakeProductProvider(products), featuredIds: [] }).search(term)
+
+describe('search', () => {
+  it('matches the title', async () => {
+    expect(ids(await search([item('1', 'Red shirt'), item('2', 'Blue hat')], 'shirt'))).toEqual(['1'])
+  })
+
+  it('matches the description', async () => {
+    expect(ids(await search([item('1', 'Thing', 'Made of cotton'), item('2', 'Other', 'Wool')], 'cotton'))).toEqual(['1'])
+  })
+
+  it('ignores letter case in the term and the product', async () => {
+    expect(ids(await search([item('1', 'Red SHIRT')], 'shIrT'))).toEqual(['1'])
+  })
+
+  it('returns an empty list when nothing matches', async () => {
+    expect(await search([item('1', 'Red shirt')], 'zzz')).toEqual([])
+  })
+
+  it('treats regex characters literally', async () => {
+    const products = [item('1', 'Shirt (blue)'), item('2', 'Hat')]
+    expect(ids(await search(products, '('))).toEqual(['1'])
+    expect(await search(products, '.*')).toEqual([])
+  })
+
+  it('keeps provider order', async () => {
+    expect(ids(await search([item('3', 'a hat'), item('1', 'a hat'), item('2', 'a hat')], 'hat'))).toEqual(['3', '1', '2'])
+  })
+
+  it('does not fail on a product without a description', async () => {
+    expect(ids(await search([item('1', 'Hat')], 'hat'))).toEqual(['1'])
+  })
+
+  it('propagates an upstream error', async () => {
+    const svc = createCatalogueService({ provider: fakeProductProvider([], new UpstreamError('down')), featuredIds: [] })
+    await expect(svc.search('x')).rejects.toBeInstanceOf(UpstreamError)
+  })
+})
+
 describe('listCategories', () => {
   it('passes through the provider categories', async () => {
     const provider = fakeProductProvider([rated('1', 1, 'men'), rated('2', 1, 'women')])

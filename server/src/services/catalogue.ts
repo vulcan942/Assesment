@@ -7,6 +7,7 @@ export interface CatalogueService {
   getFeatured(): Promise<Product[]>
   listCategories(): Promise<string[]>
   getCategoryPage(category: string): Promise<{ topRated: Product[]; products: Product[] }>
+  search(term: string): Promise<Product[]>
 }
 
 // Rating descending, unrated last, ties by id (numeric-aware so "2" sorts before "10").
@@ -29,6 +30,14 @@ export function createCatalogueService(deps: { provider: ProductProvider; featur
     },
 
     listCategories: () => deps.provider.listCategories(),
+
+    // Literal substring match (no regex) so characters like "(" or ".*" are safe. Provider order, no ranking.
+    async search(term) {
+      const needle = term.toLowerCase()
+      return (await deps.provider.list()).filter(
+        (p) => p.title.toLowerCase().includes(needle) || (p.description ?? '').toLowerCase().includes(needle),
+      )
+    },
 
     async getCategoryPage(category) {
       const categories = await deps.provider.listCategories()
