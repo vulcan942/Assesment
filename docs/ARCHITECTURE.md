@@ -92,6 +92,14 @@ interface Mailer {                   // deliver only; content is built in the se
 
 Typed errors: `UpstreamError` (provider failed, timed out or returned malformed data), `NotFoundError`, `ValidationError`, `MailDeliveryError`. The error handler maps them to HTTP responses. Raw upstream errors and stack traces never reach the client.
 
+### Featured products wiring (issue 13)
+
+- `config.FEATURED_PRODUCT_IDS` (already split and trimmed in `config.ts`) is passed to the catalogue service at construction, not read by routes or the adapter.
+- `index.ts` is the composition root: `createProductProvider(config)` -> `createCatalogueService({ provider, featuredIds })` -> `createApp(config, { catalogue })`. `createApp` takes the service, so route tests inject a fake one.
+- `routes/products.ts` (thin): `GET /products/featured` calls `catalogue.getFeatured()` and maps each item to the wire `Product` (drops `description`, `rating`). Registered before `/products/:id` so `featured` is not read as an id.
+- `getFeatured()`: `getById` per id, in configured order; `null` is skipped and logged; `UpstreamError` propagates (502).
+- Mailer wiring is not part of this issue.
+
 ### Service responsibilities
 
 - **Catalogue service**: featured products (configured ID list, in that order), categories, category page (top rated first, then the rest, no duplicates), search, product by id, pagination.
@@ -104,7 +112,7 @@ Read-only `GET` for catalogue data and one `POST` for enquiries. All under `/api
 | Method and path | Purpose | Success response |
 | --- | --- | --- |
 | `GET /health` | Liveness | `{ "status": "ok" }` |
-| `GET /products/featured` | Home page: the 5 configured products | `Product[]` |
+| `GET /products/featured` | Home page: the configured products, in configured order (five in `.env.example`) | `Product[]` (no `description`, no `rating`) |
 | `GET /categories` | Category links | `string[]` |
 | `GET /categories/:category/products?page&pageSize` | Category page | `{ topRated: Product[], products: Product[], page, pageSize, total }` |
 | `GET /products?q=&page&pageSize` | Search | `{ products: Product[], page, pageSize, total }` |
@@ -143,7 +151,7 @@ client/src/
   lib/                format, enquiry types, other helpers
   components/ui/      shadcn components (the design system)
   components/         product-aware components (ProductCard, ProductGrid, EnquiryForm, ...)
-  pages/              Home, Category, Search, Product; each handles loading, error, empty
+  pages/              planned: Home, Category, Search, Product (Home is done, the rest come later); each handles loading, error, empty. NotFoundPage is a temporary placeholder until the product page lands
   index.css           design tokens as CSS variables, the only home of colours
 ```
 
@@ -151,7 +159,6 @@ client/src/
 - `EnquiryForm` calls an injected `onSubmit` and knows nothing about email. The page wires it to `api.ts`, and it rejects when delivery fails so the form shows the failure notice.
 - Every data view has three states: loading (placeholder cards, `aria-busy`), error (what happened, what to do), empty.
 - Look and feel changes by editing the tokens in `index.css`. Components read tokens only.
-- The existing `data/sampleProducts.ts` is a temporary stand-in and is deleted when the client loads from the API.
 
 ## 8. The three seams
 
@@ -199,7 +206,7 @@ All config is environment variables, read and validated once at start-up (`confi
 | `CLIENT_ORIGIN` | The only origin allowed by CORS |
 | `PRODUCT_SOURCE` | Which `ProductProvider` adapter to build (`fakestore`) |
 | `FAKESTORE_BASE_URL` | Upstream base URL, used only by that adapter |
-| `FEATURED_PRODUCT_IDS` | Exactly five IDs for the home page |
+| `FEATURED_PRODUCT_IDS` | Comma-separated IDs for the home page, in display order (required, no code default; `.env.example` ships `1,2,3,4,5`). Five is the intent; the count is not enforced (see `DECISIONS.md`) |
 | `MAIL_PROVIDER` | Which `Mailer` adapter to build (`smtp`) |
 | `SMTP_HOST`, `SMTP_PORT` | SMTP target (Mailpit locally) |
 | `SALES_EMAIL` | Recipient of enquiries |

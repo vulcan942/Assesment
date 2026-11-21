@@ -3,7 +3,6 @@ import { z } from 'zod'
 const csvOfIds = z
   .string()
   .transform((s) => s.split(',').map((id) => id.trim()).filter(Boolean))
-  .pipe(z.array(z.string()).length(5, 'FEATURED_PRODUCT_IDS must list exactly 5 product ids'))
 
 const schema = z.object({
   PORT: z.coerce.number().int().positive(),

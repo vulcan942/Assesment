@@ -29,6 +29,8 @@
   --input: #85857f; /* border-control */
   --ring: #0f5c5c; /* focus */
   --radius: 8px; /* radius-md */
+  --container-max: 1200px; /* container-max */
+  --card-min: 220px; /* minimum product card width */
 }
 
 @theme inline {

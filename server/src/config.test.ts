@@ -24,8 +24,13 @@ describe('loadConfig', () => {
     expect(() => loadConfig({})).toThrow(/PORT[\s\S]*SALES_EMAIL/)
   })
 
-  it('rejects a featured list that is not five ids', () => {
-    expect(() => loadConfig({ ...valid, FEATURED_PRODUCT_IDS: '1,2' })).toThrow(/exactly 5/)
+  it('accepts a featured list that is not five ids', () => {
+    expect(loadConfig({ ...valid, FEATURED_PRODUCT_IDS: ' 1, 2,,' }).FEATURED_PRODUCT_IDS).toEqual(['1', '2'])
+  })
+
+  it('fails when FEATURED_PRODUCT_IDS is missing', () => {
+    const { FEATURED_PRODUCT_IDS: _omit, ...rest } = valid
+    expect(() => loadConfig(rest)).toThrow(/FEATURED_PRODUCT_IDS/)
   })
 
   it('rejects an unknown product source', () => {

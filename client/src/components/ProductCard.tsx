@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { formatPrice } from '@/lib/format'
@@ -8,9 +8,10 @@ interface ProductCardProps {
   product: Product
   currency?: string
   onEnquire: (product: Product) => void
+  renderTitle?: (product: Product) => ReactNode
 }
 
-export function ProductCard({ product, currency, onEnquire }: ProductCardProps) {
+export function ProductCard({ product, currency, onEnquire, renderTitle }: ProductCardProps) {
   const [imageFailed, setImageFailed] = useState(false)
   const showImage = product.image && !imageFailed
 
@@ -32,7 +33,9 @@ export function ProductCard({ product, currency, onEnquire }: ProductCardProps) 
         {product.category && (
           <p className="text-xs leading-4 text-muted-foreground">{product.category}</p>
         )}
-        <h3 className="line-clamp-2 text-base leading-6 font-semibold">{product.title}</h3>
+        <h3 className="text-base leading-6 font-semibold">
+          {renderTitle ? renderTitle(product) : <span className="line-clamp-2">{product.title}</span>}
+        </h3>
         {product.price !== undefined && (
           <p className="text-lg leading-6 font-semibold">{formatPrice(product.price, currency)}</p>
         )}
