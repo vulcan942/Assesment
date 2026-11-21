@@ -110,7 +110,7 @@ export function EnquiryForm({ product, currency, onSubmit, onDone, onCancel }: E
     <form onSubmit={handleSubmit} noValidate className="relative flex flex-col gap-4">
       {product && (
         <div className="rounded-md bg-muted p-4">
-          <p className="text-sm leading-5 font-semibold">{product.title}</p>
+          <p className="text-sm leading-5 font-semibold wrap-anywhere">{product.title}</p>
           {product.category && <p className="text-xs leading-4 text-muted-foreground">{product.category}</p>}
           {product.price !== undefined && (
             <p className="text-lg leading-6 font-semibold">{formatPrice(product.price, currency)}</p>
@@ -181,7 +181,7 @@ export function EnquiryForm({ product, currency, onSubmit, onDone, onCancel }: E
         </Alert>
       )}
 
-      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+      <div className="flex flex-col-reverse gap-2 min-[600px]:flex-row min-[600px]:justify-end">
         <Button type="button" variant="secondary" onClick={onCancel} disabled={sending}>
           Cancel
         </Button>
