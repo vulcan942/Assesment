@@ -100,6 +100,30 @@ Typed errors: `UpstreamError` (provider failed, timed out or returned malformed 
 - `getFeatured()`: `getById` per id, in configured order; `null` is skipped and logged; `UpstreamError` propagates (502).
 - Mailer wiring is not part of this issue.
 
+### Category endpoints wiring (issue 14)
+
+Assumptions are in `docs/DECISIONS.md` (#14). Final contracts:
+
+- `GET /api/categories` -> `200 string[]`, raw upstream names, provider order.
+- `GET /api/categories/:category/products` -> `200 { topRated: Product[], products: Product[], page: 1, pageSize: products.length, total: products.length }`. Wire `Product` has no `rating` and no `description`. `page`/`pageSize` query params are ignored until #18. Unknown category -> `404 { error: { code: 'not_found', message: 'We could not find that.' } }`; a known empty category -> 200 with empty lists.
+
+Server pieces:
+
+- `domain/errors.ts`: re-add `NotFoundError` (message only). `routes/errorHandler.ts` maps it to 404 with `code: 'not_found'` and the generic message 'We could not find that.' (the client supplies its own copy per page; the server does not say whether a product or a category was missing). The log line stays. The handler also maps any error with `status === 400` (bad percent-encoding, bad JSON) to `400 { error: { code: 'bad_request' } }`.
+- `services/catalogue.ts` adds to `CatalogueService`:
+  - `listCategories(): Promise<string[]>` passes through `provider.listCategories()`.
+  - `getCategoryPage(category): Promise<{ topRated: Product[]; products: Product[] }>`. Steps: `listCategories()`, exact case-sensitive match, else `throw new NotFoundError`; then `provider.list()`, filter `p.category === category`, sort, `topRated = sorted.slice(0, TOP_RATED_COUNT)`, `products = sorted.slice(TOP_RATED_COUNT)`. `TOP_RATED_COUNT = 3` is a constant in this file.
+  - Ranking lives here only, using `rating` from the domain `Product`: rating descending, missing last, ties by id ascending with numeric-aware `localeCompare`. The service returns domain `Product`s; it knows nothing about `page`.
+- Routes (layering unchanged: route -> service):
+  - `routes/products.ts` keeps `/products/featured` and later `/products/:id`.
+  - New `routes/categories.ts` exports `categoriesRouter(catalogue)` with both category routes; `app.ts` mounts it under `/api`. It builds `{ topRated, products, page: 1, pageSize: products.length, total: products.length }`, since paging fields are response shaping, not business logic. #18 moves them to the service.
+  - New `routes/wire.ts` exports `toCard(product): WireProduct` (picks `id, title, price, image, category`). `products.ts` and `categories.ts` both use it, so the "no rating or description on the wire" rule has one home. Replace the inline map in `products.ts`.
+- Param validation (zod, in the route file, before the service call; failure -> `ValidationError` -> 400):
+  - `category`: `z.string().trim().min(1).max(64)`. Express has already decoded it. No character whitelist; it is only compared against the provider list.
+  - Product id schema (for `/products/:id`, issue 15, defined next to `toCard` in `routes/wire.ts` or the products route): `z.string().trim().min(1).max(32)` and reject `.` and `..`, because the Fake Store adapter puts the id into a URL path and those would resolve to a different upstream resource (#12 reminder). Added when the first route needs it; featured ids come from config and are not affected.
+- Tests: service against a fake provider (top 3 order, missing rating last, tie order, unknown category throws `NotFoundError`, empty category); route tests for 200 shape with no `rating`, 404 shape, 400 on empty/over-long category, 502 on `UpstreamError`.
+- Client: `api.ts` gains `getCategories()` and `getCategoryPage(category)` (applies `encodeURIComponent`). No other module calls `fetch`.
+
 ### Service responsibilities
 
 - **Catalogue service**: featured products (configured ID list, in that order), categories, category page (top rated first, then the rest, no duplicates), search, product by id, pagination.
@@ -114,7 +138,7 @@ Read-only `GET` for catalogue data and one `POST` for enquiries. All under `/api
 | `GET /health` | Liveness | `{ "status": "ok" }` |
 | `GET /products/featured` | Home page: the configured products, in configured order (five in `.env.example`) | `Product[]` (no `description`, no `rating`) |
 | `GET /categories` | Category links | `string[]` |
-| `GET /categories/:category/products?page&pageSize` | Category page | `{ topRated: Product[], products: Product[], page, pageSize, total }` |
+| `GET /categories/:category/products` | Category page. `page` and `pageSize` are ignored until #18; `total` and `pageSize` count only `products`, not `topRated` | `{ topRated: Product[], products: Product[], page, pageSize, total }` |
 | `GET /products?q=&page&pageSize` | Search | `{ products: Product[], page, pageSize, total }` |
 | `GET /products/:id` | Product details | `ProductDetail` |
 | `POST /enquiries` | Enquire | `201 { "status": "sent" }` |
@@ -133,7 +157,7 @@ Errors share one shape and the right status:
 
 | Status | When |
 | --- | --- |
-| 400 | Invalid body, query or path param (`fields` present) |
+| 400 | Invalid body, query or path param (`fields` present), or an unreadable request such as bad percent-encoding (`bad_request`) |
 | 404 | Unknown product or category |
 | 502 | Product source failed |
 | 502 | Enquiry email could not be delivered (customer is told it failed, nothing is reported as sent) |
@@ -150,8 +174,8 @@ client/src/
   lib/api.ts          the only place that calls fetch; typed, one error type
   lib/                format, enquiry types, other helpers
   components/ui/      shadcn components (the design system)
-  components/         product-aware components (ProductCard, ProductGrid, EnquiryForm, ...)
-  pages/              planned: Home, Category, Search, Product (Home is done, the rest come later); each handles loading, error, empty. NotFoundPage is a temporary placeholder until the product page lands
+  components/         product-aware components (ProductCard, ProductGrid, CategoryNav, EnquiryForm, ...)
+  pages/              planned: Home, Category, Search, Product (Home and Category are done, the rest come later); each handles loading, error, empty. NotFoundPage is a temporary placeholder that also handles /products/:id until the product page (#16) lands
   index.css           design tokens as CSS variables, the only home of colours
 ```
 

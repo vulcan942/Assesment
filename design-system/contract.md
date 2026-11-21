@@ -26,7 +26,7 @@ Map the Fake Store API (`/products`) like this, in one function at the edge of t
 
 Ignore `description` and `rating` until the real product metadata exists. A future source needs only another mapper that returns `Product`.
 
-Category chips come from the distinct `category` values of the products you load, plus an "All" chip first.
+Category links come from `GET /categories`. There is no "All" chip, and the client never derives categories from loaded products.
 
 ## EnquiryPayload (output of `EnquiryForm`)
 

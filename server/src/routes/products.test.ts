@@ -16,16 +16,26 @@ function start(catalogue: CatalogueService) {
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`
 }
 
-const failing = (err: Error): CatalogueService => ({
-  getFeatured: async () => {
-    throw err
-  },
+const reject = async (): Promise<never> => {
+  throw new Error('not used')
+}
+const stub = (overrides: Partial<CatalogueService>): CatalogueService => ({
+  getFeatured: reject,
+  listCategories: reject,
+  getCategoryPage: reject,
+  ...overrides,
 })
+const failing = (err: Error): CatalogueService =>
+  stub({
+    getFeatured: async () => {
+      throw err
+    },
+  })
 
 describe('GET /api/products/featured', () => {
   it('returns wire products without description or rating', async () => {
     const full = { id: '1', title: 'Shirt', price: 9.5, image: 'i.png', category: 'men', description: 'long', rating: 4.5 }
-    const res = await fetch(`${start({ getFeatured: async () => [full] })}/api/products/featured`)
+    const res = await fetch(`${start(stub({ getFeatured: async () => [full] }))}/api/products/featured`)
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual([{ id: '1', title: 'Shirt', price: 9.5, image: 'i.png', category: 'men' }])
   })
@@ -58,7 +68,7 @@ describe('GET /api/products/featured', () => {
 
 describe('unknown API paths', () => {
   it('returns 404 with the shared JSON error shape', async () => {
-    const res = await fetch(`${start({ getFeatured: async () => [] })}/api/unknown`)
+    const res = await fetch(`${start(stub({ getFeatured: async () => [] }))}/api/unknown`)
     expect(res.status).toBe(404)
     expect(await res.json()).toEqual({ error: { code: 'not_found', message: 'We could not find that page.' } })
   })

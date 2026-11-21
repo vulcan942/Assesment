@@ -33,6 +33,21 @@
 - A configured id the provider cannot find is skipped and logged. Other upstream failures (`UpstreamError`) fail the request, as for every endpoint. Reason: one stale id should not blank the home page.
 - Featured cards link to `/products/:id`, the product page route.
 - Featured empty state (no ids configured, or none found) reads "No featured products right now. Try browsing a category."
+- Category page (#14) keeps the `{ topRated, products, page, pageSize, total }` shape but does not page yet: it returns every non-top-rated product with `page: 1`, `pageSize` equal to `products.length`, and `total` the count of `products`. `page` and `pageSize` query params are not read until #18 adds real paging.
+- Ranking: rating descending, a missing rating sorts last, ties break by id ascending (numeric-aware string compare), so the order is stable. `topRated` is the first 3 of that order and `products` is the remainder in the same order, so no product appears twice. A category with 3 or fewer products has an empty `products` list.
+- Category names are matched exactly and case-sensitively against `provider.listCategories()`, with no normalising. The client sends them with `encodeURIComponent` (for example `men's%20clothing`); Express decodes the path param.
+- Unknown category: the service checks the name against `listCategories()` and throws `NotFoundError` (404). A known category with no products returns 200 with empty lists. Costs one extra upstream call; no caching, per the existing decision.
+- Category names stay raw in the API. The UI uppercases the first letter only (CSS `first-letter:uppercase`; never title case, per the design README); no label mapping, and upstream spellings such as "jewelery" are not corrected.
+- Category links appear in the site header nav (every page) and as a "Browse categories" list on home, from one shared component that reads `GET /categories`.
+- Category page copy: empty reads "No products in this category yet. Try another category."; unknown reads "We could not find that category. Choose one from the menu."; the "Top rated" section heading shows only when `topRated` is not empty, and "More in this category" only when `products` is not empty.
+- #14 unknown-category and not-found 404s use a generic server message, 'We could not find that.', because the same handler will serve products later. Each client page supplies its own copy.
+- #14 the error handler maps any Express error with `status === 400` (bad percent-encoding such as `%E0%A4%A`, malformed JSON) to `400 bad_request`. Only 400 is mapped: other 4xx from Express (413, 415) still return 500. Accepted for the PoC.
+- #14 category names are matched case-sensitively and exactly. `Electronics` is a 404; `electronics` is the name.
+- #14 `total` and `pageSize` count `products` only, excluding `topRated`.
+- #14 `document.title` uses the raw category name followed by " - Catalogue" (not capitalised). Minor, accepted.
+- #14 shared link classes and breakpoint tokens are repeated in three places and intentionally not extracted yet. Revisit if a fourth appears.
+- #14 the home page has no `h1`. This is a pre-existing gap from #13, to be settled; see `docs/design.md`.
+- #14 bug fixed: in Tailwind v4, `outline-none` plus `outline-2` hid the focus ring on `Button`, `Input`, `Textarea` and `Toggle` since the first issues. Fixed with `focus-visible:outline-solid`.
 
 ## Dropped or simplified
 

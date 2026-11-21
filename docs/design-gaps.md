@@ -1,6 +1,6 @@
 # Design gaps
 
-Rulings on pieces the five features need that `design-system/README.md` does not list. Rule: compose first; a new component needs a reason the existing ones cannot cover. Only issue 13 (home, featured products) is ruled on so far; later issues append here.
+Rulings on pieces the five features need that `design-system/README.md` does not list. Rule: compose first; a new component needs a reason the existing ones cannot cover. Issue 13 (home, featured products) and issue 14 (category page) are ruled on so far; later issues append here.
 
 ## SiteHeader
 
@@ -8,8 +8,8 @@ Rulings on pieces the five features need that `design-system/README.md` does not
 
 - Markup: `<header>` containing one `<a>`/`<Link to="/">` with the brand text (plain text "Catalogue"; no logo, branding is pending). Styled with tokens only (`ink`, `t-heading-sm`, `border` hairline under it, `surface`). The link is at least 44px tall and shows the 2px focus outline.
 - Props: none. It takes no `Product`.
-- Scope in issue 13: brand link only. Category nav is deferred to the category-listing issue. Reason: `GET /categories` does not exist yet, and `product-scope.md` forbids endpoints and UI for later. The home page links to products only.
-- When the category issue lands, it adds the nav to this header, built from `GET /categories` via `api.ts` and composed from `Button` (ghost) links or the existing `CategoryFilter`. At that point it needs its own loading/error/empty handling. Search box likewise belongs to the search issue.
+- Scope in issue 13: brand link only. Category nav was deferred to the category-listing issue, because `GET /categories` did not exist yet and `product-scope.md` forbids endpoints and UI for later.
+- Issue 14 added the nav to this header (done): built from `GET /categories` via `api.ts`, composed from `Button` (ghost) links (ruled in the issue 14 section below; `CategoryFilter` was deleted), with its own loading/error/empty handling. The search box belongs to the search issue.
 - Why not a new component: the README lists seven components for browsing content, and a page header is a layout wrapper with one link. Nothing in it needs a new token, state or glyph.
 
 ## PageContainer
@@ -49,6 +49,54 @@ All changes below are made by the frontend-builder in `client/src/components/` (
    - Reason: a plain `href` prop would force a full page reload in a client-routed app; a render-prop is the smallest way to stay router-agnostic. This is a change to an existing component, not a new one.
 
 **Router.** `react-router` (v7, single `react-router` package, `createBrowserRouter`) is confirmed, as in `DECISIONS.md`. It is not yet in `client/package.json`; the frontend-builder adds it and states the justification (four pages, `Link`, `useNavigate`, `Outlet`). It is free, needs no account and is acceptable under `security-config.md` and `CLAUDE.md` ("no new libraries without asking" is satisfied by this ruling plus `DECISIONS.md`). No other routing or data library is approved.
+
+## Issue 14 (category page)
+
+### SectionHeading
+
+**Ruling: compose. No component.** Same as the issue 13 row: a styled `<h2>` with `t-heading-md`. Used for "Top rated" and "More in this category" (each only when its list is not empty, per `DECISIONS.md`). The page title is an `<h1>` with the category name (first letter uppercased via CSS, not `capitalize`). Three uses of one tag plus a class; a component would add no behaviour. If the class string repeats on three pages, share a constant, not a component.
+
+### Category nav (header and home)
+
+**Ruling: compose. One app-level component in `client/src/components/`, `CategoryNav`, no new design-system part.**
+
+- Markup: `<nav aria-label="Categories">` with a `<ul>` of `Link`s (react-router) to `/categories/${encodeURIComponent(name)}`. Links are styled with the existing `Button` `variant="ghost"` via `asChild` (or the same classes), at least 44px tall, 2px focus outline with 2px offset, first letter uppercased (`first-letter:uppercase`). Wraps onto several rows; no horizontal scroll, no menu, no animation.
+- Data: it calls `api.getCategories()` itself and owns loading (a short text or placeholder), error (`Notice` danger, one line, what happened and what to do) and empty (renders nothing). One fetch per mount: the header and home each mount it, which is two calls to a cheap endpoint; no shared cache or context (no caching decision). If that bothers you later, lift the fetch into `RootLayout`; not now.
+- The current page is marked with `aria-current="page"` on its link.
+- Why one component, not two: the header and the home "Browse categories" list differ only by heading and layout, so `CategoryNav` takes only optional `className` and `heading` (see the issue 14 designer requests, resolved).
+- Why not a new design-system component: it is a list of links; nothing needs a new token, state or glyph.
+
+### CategoryFilter.tsx
+
+**Ruling: delete it.** It is unused, and it does the wrong job:
+
+- It derives categories from loaded `Product[]`, which conflicts with the rule that the server list wins (conflict 3 below) and with the "no filtering in the client" rule in `frontend.md`.
+- It is a toggle group with `onChange` and an "All" option, so it filters in place. We navigate to a category URL instead, which needs links, not toggles, for correct semantics (back button, shareable URL, screen readers announce links).
+- Done: the file is deleted. `design-system/contract.md` line 29 ("Category chips come from the distinct `category` values of the products you load, plus an All chip") now reads: category links come from `GET /categories` (done in `contract.md`). `README.md` does not name `CategoryFilter`, so only that line changes. Chip tokens stay available; nothing else in the design system moves.
+
+### Category page structure
+
+**Ruling: compose. `CategoryPage` in `client/src/pages/` from existing parts.**
+
+- `<h1>` category name, then, in order: `<h2>` "Top rated" + `ProductGrid` (when `topRated` non-empty), `<h2>` "More in this category" + `ProductGrid` (when `products` non-empty).
+- Loading: one `ProductGrid` in loading state. Error: `ProductGrid` error state with default copy. Empty (both lists empty): one `ProductGrid` with `emptyTitle`/`emptyBody` set to "No products in this category yet. Try another category."
+- Unknown category (API 404): `Notice` with "We could not find that category. Choose one from the menu." The page distinguishes it by the `api.ts` error type (status 404), not by parsing messages. No new component.
+- Cards use the same `renderTitle` link and `onEnquire` navigation as home (ruled above). No sorting or filtering controls. Pagination controls are #18.
+- Route: `/categories/:category` in `routes.tsx`; the param is decoded by react-router before use.
+
+### Designer requests (issue 14, for the architect)
+
+No new components. Two requests, both **resolved** with one optional prop.
+
+1. **Heading owned by `CategoryNav`. Resolved: accept `heading?: string`.**
+   - With `heading` set, `CategoryNav` renders a wrapper `<div className>` holding `<h2 id={useId()}>{heading}</h2>` and the `<nav>`. `HomePage` drops its own `section` and `h2` and passes `heading="Browse categories"`. The header passes none, so it renders only the `<nav>`.
+   - Empty state renders nothing at all (wrapper, heading and its outer spacing included), so no heading over an empty list. The heading shows in loading, ready and error states, same as "Featured products" on home. `className` goes on the outermost element rendered.
+   - Reason: the component already knows when it is empty; the parent does not. One prop, no callback.
+2. **Duplicate landmark name. Resolved: no `label` prop; derive it.**
+   - With `heading` set, the nav uses `aria-labelledby` pointing at the `h2` (name "Browse categories"). Without it, `aria-label="Categories"`. The two navs are then distinctly named from the one prop in request 1.
+   - Reason: a second prop would only restate the heading text and could drift from it.
+
+The nav error copy ("Categories did not load" / "Refresh the page to try again.") and the unknown-category tone (info `Notice`, not danger) are design choices in `docs/design.md`, not requests.
 
 ## Conflicts found
 

@@ -1,4 +1,5 @@
 import { Link, Outlet } from 'react-router'
+import { CategoryNav } from '@/components/CategoryNav'
 
 // One string so the header brand and page content share the same column and padding.
 const container = 'mx-auto w-full max-w-(--container-max) px-4 min-[600px]:px-8'
@@ -6,13 +7,14 @@ const container = 'mx-auto w-full max-w-(--container-max) px-4 min-[600px]:px-8'
 function SiteHeader() {
   return (
     <header className="border-b border-border bg-background">
-      <div className={`${container} flex`}>
+      <div className={`${container} flex flex-col gap-2 py-3 min-[960px]:flex-row min-[960px]:items-center min-[960px]:gap-4 min-[960px]:py-4`}>
         <Link
           to="/"
           className="flex min-h-11 items-center text-base leading-6 font-semibold hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
           Catalogue
         </Link>
+        <CategoryNav />
       </div>
     </header>
   )

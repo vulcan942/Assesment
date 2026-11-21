@@ -84,8 +84,8 @@ export const getFeatured = () => request<Product[]>('/products/featured')
 
 export const getCategories = () => request<string[]>('/categories')
 
-export const getCategoryProducts = (category: string, { page, pageSize }: PageParams = {}) =>
-  request<CategoryPage>(`/categories/${segment(category)}/products`, { page, pageSize })
+export const getCategoryPage = (category: string) =>
+  request<CategoryPage>(`/categories/${segment(category)}/products`)
 
 export const searchProducts = (q: string, { page, pageSize }: PageParams = {}) =>
   request<ProductPage>('/products', { q, page, pageSize })
