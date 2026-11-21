@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, getCategories, searchProducts, type ProductPage } from '@/lib/api'
+import { ApiError, getCategories, searchProducts, type ProductListPage } from '@/lib/api'
 import { routes } from '@/routes'
 
 vi.mock('@/lib/api', async (importOriginal) => ({
@@ -15,7 +15,7 @@ const mocked = vi.mocked(searchProducts)
 vi.mocked(getCategories).mockResolvedValue([])
 
 const item = (id: number, title: string) => ({ id, title, price: 10, image: '', category: 'electronics' })
-const page = (products: ProductPage['products']): ProductPage => ({
+const page = (products: ProductListPage['products']): ProductListPage => ({
   products,
   page: 1,
   pageSize: 12,
@@ -123,7 +123,7 @@ describe('SearchPage', () => {
 })
 
 describe('SearchPage pagination', () => {
-  const paged = (n: number, total: number, products: ProductPage['products']): ProductPage => ({
+  const paged = (n: number, total: number, products: ProductListPage['products']): ProductListPage => ({
     products,
     page: n,
     pageSize: 12,
@@ -175,8 +175,8 @@ describe('SearchPage pagination', () => {
     mocked.mockResolvedValueOnce(paged(1, 24, [item(7, 'Blue shirt')]))
     renderAt('/search?q=shirt')
     await screen.findByText('Page 1 of 2')
-    let release!: (v: ProductPage) => void
-    mocked.mockReturnValueOnce(new Promise<ProductPage>((r) => (release = r)))
+    let release!: (v: ProductListPage) => void
+    mocked.mockReturnValueOnce(new Promise<ProductListPage>((r) => (release = r)))
     await userEvent.click(screen.getByRole('link', { name: 'Next page' }))
     expect(await screen.findByLabelText('Loading products')).toBeInTheDocument()
     release(paged(2, 24, [item(8, 'Red shirt')]))
@@ -203,7 +203,7 @@ describe('SearchPage pagination', () => {
 })
 
 describe('SearchPage pagination edges', () => {
-  const paged = (n: number, total: number, products: ProductPage['products']): ProductPage => ({
+  const paged = (n: number, total: number, products: ProductListPage['products']): ProductListPage => ({
     products,
     page: n,
     pageSize: 12,

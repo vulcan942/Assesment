@@ -16,13 +16,13 @@ const label = (text: string) => (
 )
 
 export function Pagination({ page, pageSize, total, to }: PaginationProps) {
-  const totalPages = Math.max(1, Math.ceil(total / pageSize))
+  const totalPages = pageSize > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 1
   if (totalPages <= 1) return null
 
   return (
     <nav
       aria-label="Pagination"
-      className="mt-8 flex items-center justify-between gap-3 min-[600px]:justify-center min-[600px]:gap-6 min-[960px]:mt-12"
+      className="mt-8 flex flex-wrap items-center justify-between gap-3 gap-y-3 min-[600px]:justify-center min-[600px]:gap-6 min-[960px]:mt-12"
     >
       {page > 1 ? (
         <Button variant="secondary" asChild>

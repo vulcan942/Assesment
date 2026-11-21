@@ -7,14 +7,14 @@ export interface ProductDetail extends Product {
   description?: string
 }
 
-export interface ProductPage {
+export interface ProductListPage {
   products: Product[]
   page: number
   pageSize: number
   total: number
 }
 
-export interface CategoryPage extends ProductPage {
+export interface CategoryPage extends ProductListPage {
   topRated: Product[]
 }
 
@@ -86,7 +86,7 @@ export const getCategoryPage = (category: string, page?: number) =>
   request<CategoryPage>(`/categories/${segment(category)}/products`, { page: pageParam(page) })
 
 export const searchProducts = (q: string, page?: number) =>
-  request<ProductPage>('/products', { q, page: pageParam(page) })
+  request<ProductListPage>('/products', { q, page: pageParam(page) })
 
 export const getProduct = (id: string | number) => request<ProductDetail>(`/products/${segment(String(id))}`)
 

@@ -85,7 +85,7 @@ function CategoryContent({ category, page }: { category: string; page: number })
           <Info />
           <AlertDescription>That page does not exist.</AlertDescription>
         </Alert>
-        <Button asChild className="mt-4">
+        <Button asChild variant="secondary" className="mt-4">
           <Link to={to(1)}>Go to the first page</Link>
         </Button>
       </>

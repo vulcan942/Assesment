@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -309,6 +309,20 @@ describe('CategoryPage pagination edges', () => {
     await userEvent.click(screen.getByRole('link', { name: 'Next page' }))
     await screen.findByText('Page 2 of 4')
     expect(scrollTo).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps focus, clears the paged flag and does not scroll or refetch again after Next', async () => {
+    mocked.mockResolvedValue(at(1, 40, three, many(12)))
+    const router = renderAt('/categories/electronics')
+    await screen.findByText('Page 1 of 4')
+    mocked.mockResolvedValue(at(2, 40, [], many(12)))
+    await userEvent.click(screen.getByRole('link', { name: 'Next page' }))
+    await screen.findByText('Page 2 of 4')
+    await waitFor(() => expect(router.state.location.state).toBeNull())
+    expect(router.state.location.search).toBe('?page=2')
+    expect(screen.getByRole('heading', { level: 1 })).toHaveFocus()
+    expect(scrollTo).toHaveBeenCalledTimes(1)
+    expect(mocked).toHaveBeenCalledTimes(2)
   })
 
   it('shows the error notice when the server rejects the page with a 400', async () => {
