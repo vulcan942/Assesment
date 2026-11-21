@@ -24,6 +24,9 @@ Setup issues 1 to 7 first (repo hygiene, server scaffold, design system wiring, 
 
 - Asked for client design-system steps, it also built a full backend server. I caught it while reviewing the diff; the server was deleted and rebuilt later as a scaffold only.
 - First component pass had controls under the 44px minimum in the design system. Caught by comparing against `design-system/README.md`.
+- Issue 12, backend fix agent: it reported "placeholder" instead of a real report. Caught by inspecting the diff myself.
+- Issue 12, first review: the client still held a Fake Store mapper. The reviewer agent caught it.
+- Issue 12, mutation checks: breaking the code on purpose showed three weak tests (non-2xx, invalid JSON, base URL) that still passed. They were tightened.
 
 ## Time spent
 

@@ -26,7 +26,7 @@ All settings come from environment variables and are listed in [.env.example](.e
 
 ## Develop without Docker
 
-Needs Node 22.
+Needs Node 22 (Node 20 breaks the client tests). Check `node -v` in the shell you test from: on one Windows machine Git Bash resolved Node 20 while PowerShell had Node 24.
 
 ```sh
 npm run setup        # install server and client dependencies
