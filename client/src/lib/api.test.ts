@@ -53,7 +53,7 @@ describe('api', () => {
     await expect(getFeatured()).rejects.toMatchObject({ status: 0, code: 'network_error' })
   })
 
-  it('encodes the search term and omits unset paging params', async () => {
+  it('encodes the search term', async () => {
     const fn = stubFetch(async () => json({ products: [], page: 1, pageSize: 12, total: 0 }))
     await searchProducts('men & women/shirt')
     expect(fn.mock.calls[0][0]).toBe('/api/products?q=men+%26+women%2Fshirt')

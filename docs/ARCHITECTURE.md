@@ -124,6 +124,18 @@ Server pieces:
 - Tests: service against a fake provider (top 3 order, missing rating last, tie order, unknown category throws `NotFoundError`, empty category); route tests for 200 shape with no `rating`, 404 shape, 400 on empty/over-long category, 502 on `UpstreamError`.
 - Client: `api.ts` gains `getCategories()` and `getCategoryPage(category)` (applies `encodeURIComponent`). No other module calls `fetch`.
 
+### Search endpoint wiring (issue 15)
+
+Assumptions are in `docs/DECISIONS.md` (#15). Final contract:
+
+- `GET /api/products?q=term` -> `200 { products: Product[], page: 1, pageSize: products.length, total: products.length }`. Wire `Product` via `toCard` (no `description`, no `rating`). `page` and `pageSize` params are ignored until #18. No match -> 200 with an empty list, not 404.
+- Invalid `q` (missing, empty or whitespace-only, over 100 chars after trimming) -> `400 { error: { code: 'validation_failed', message: 'Check the highlighted fields.', fields: { q: '<message>' } } }`, the shared shape from section 6. Suggested `fields.q`: "Enter a word to search for." (empty) and "Use 100 characters or fewer." (too long). `bad_request` is only for unreadable requests.
+- Route (`routes/products.ts`): `router.get('/products', ...)` registered next to `/products/featured`. They do not collide (different paths); `/products/:id`, when added, still goes after `/products/featured`. Zod schema in the route file: `z.string().trim().transform(s => s.replace(/\s+/g, ' ')).pipe(z.string().min(1).max(100))`. On failure the route throws `ValidationError({ q })` with the message above; the route never calls a provider.
+- Service: `CatalogueService.search(term: string): Promise<Product[]>`. Calls `provider.list()`, keeps products where `title` or `description` lowercased `.includes` the lowercased term, in provider order, no ranking. It receives the already-normalised term and returns domain `Product`s. Search stays in the service so it works with any provider.
+- Route shapes the response: `{ products: products.map(toCard), page: 1, pageSize: n, total: n }` (as for categories; #18 moves paging into the service).
+- Tests: service against a fake provider (title match, description match, case-insensitive, provider order, no match -> `[]`); route tests (200 shape without `description`/`rating`, 400 with `fields.q` for missing, empty, whitespace and 101 chars, whitespace collapsed before matching, 502 on `UpstreamError`).
+- Client: `api.ts` gains `searchProducts(q)`. It builds the query string with `URLSearchParams` inside `request()` and has no paging options until #18. `SearchBar` (which uses `encodeURIComponent` to build the `/search?q=` URL) and `SearchPage` are client-side only: they navigate and fetch through `api.ts`. `RootLayout` reads `q` so the header field shows the current term.
+
 ### Service responsibilities
 
 - **Catalogue service**: featured products (configured ID list, in that order), categories, category page (top rated first, then the rest, no duplicates), search, product by id, pagination.
@@ -165,7 +177,7 @@ Errors share one shape and the right status:
 
 Enquiry body (matches `EnquiryPayload` in `design-system/contract.md`): `name`, `email`, `message` required, `phone` optional, `product: { id, title, price? }`. The server revalidates all of it: trimmed, length-limited, valid email.
 
-Search input is trimmed and length-limited; an empty term is rejected.
+Search input is trimmed, whitespace-collapsed and limited to 100 characters; an empty term is rejected with `validation_failed` and `fields.q` (see Search endpoint wiring).
 
 ## 7. Client structure
 

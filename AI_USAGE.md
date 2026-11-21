@@ -39,6 +39,11 @@ Setup issues 1 to 7 first (repo hygiene, server scaffold, design system wiring, 
 - Issue 14, server: malformed percent-encoding in a path returned 500. The reviewer agent caught it with a repro; Express status-400 errors now map to 400 `bad_request`.
 - Issue 14, ranking: the `-Infinity - -Infinity` NaN sort pitfall in `byRanking` (two products with no rating gives NaN). `byRanking` now guards it and falls through to the id tie-break.
 - Issue 14, process: an unknown peer session asked for the diff. It was not answered.
+- Issue 15, server: a repeated `q` (`?q=a&q=b`) reaches the route as an array, not a string, so the schema would not have returned 400 and would have ended in 500. A hand-written schema now returns 400. The builder's test caught it.
+- Issue 15, design: the design said to show the default connection copy for a 400. That is false and misleading, because the connection is fine. The builder deviated and the reviewers confirmed it. The docs conflicted with the code, so the docs were changed: a 400 with `fields.q` shows a 'Search did not run' alert with the server's message.
+- Issue 15, design: the designer deviated on whitespace between the task and `design.md` (trim versus collapse). It was settled as: the client trims only and the server collapses.
+- Issue 15, review: a reviewer said Tailwind `mb-6` is 32px. It is 24px. I checked the arithmetic before acting and made no change.
+- Issue 15, docs: an agent edit to `docs/DECISIONS.md` changed the line endings of the #14 bullets and made them show as changed. The original line endings were restored so the diff shows only new lines.
 
 ## Time spent
 

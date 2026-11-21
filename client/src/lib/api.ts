@@ -18,11 +18,6 @@ export interface CategoryPage extends ProductPage {
   topRated: Product[]
 }
 
-export interface PageParams {
-  page?: number
-  pageSize?: number
-}
-
 export class ApiError extends Error {
   readonly status: number
   readonly code: string
@@ -87,8 +82,7 @@ export const getCategories = () => request<string[]>('/categories')
 export const getCategoryPage = (category: string) =>
   request<CategoryPage>(`/categories/${segment(category)}/products`)
 
-export const searchProducts = (q: string, { page, pageSize }: PageParams = {}) =>
-  request<ProductPage>('/products', { q, page, pageSize })
+export const searchProducts = (q: string) => request<ProductPage>('/products', { q })
 
 export const getProduct = (id: string | number) => request<ProductDetail>(`/products/${segment(String(id))}`)
 
