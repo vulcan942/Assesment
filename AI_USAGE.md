@@ -32,6 +32,13 @@ Setup issues 1 to 7 first (repo hygiene, server scaffold, design system wiring, 
 - Issue 13, spec: an assumption said the featured ids have a default, but config has none. The reviewer agent caught it.
 - Issue 13, process: a builder ran `git stash` while another builder worked in the same tree. It said so in its report, and the tree was verified intact.
 - Issue 13, tests: jsdom failures were a wrong Node on PATH, first misdiagnosed as a Git Bash problem. Later shown to be nvm resolving v20 in both shells.
+- Issue 14, focus ring: the stock shadcn `Button`, `Input`, `Textarea` and `Toggle` used `outline-none` with `outline-2` (Tailwind v4), which hid the focus ring. It had been there since the first issues. The design-reviewer agent caught it; it was confirmed by inspecting the built CSS and fixed with `focus-visible:outline-solid`.
+- Issue 14, design: the designer did not read `tokens.json` or `contract.md`. It said so in its self-report, the architect re-verified, and one radius token was wrong.
+- Issue 14, design: the designer spec used CSS `capitalize`, against the design README ("never title case"). The design-reviewer agent caught it; the build uses first-letter uppercase only.
+- Issue 14, server: a hard-coded 404 message about categories would have misled for products. The reviewer agent caught it; the message is now generic and the client supplies its own copy.
+- Issue 14, server: malformed percent-encoding in a path returned 500. The reviewer agent caught it with a repro; Express status-400 errors now map to 400 `bad_request`.
+- Issue 14, ranking: the `-Infinity - -Infinity` NaN sort pitfall in `byRanking` (two products with no rating gives NaN). `byRanking` now guards it and falls through to the id tie-break.
+- Issue 14, process: an unknown peer session asked for the diff. It was not answered.
 
 ## Time spent
 
