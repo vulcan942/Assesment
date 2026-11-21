@@ -2,7 +2,7 @@
 
 UI design for the catalogue PoC. Built only from `design-system/` components and the rulings in `docs/design-gaps.md`. Token names only; no raw colours, sizes or fonts.
 
-Scope of this version: **issue 13 (home, featured products)**, **issue 14 (category nav and category page)**, **issue 15 (search bar and results page)**, **issue 16 (product page with the enquiry dialog)** and **issue 17 (enquiry form final state, server errors, sales email)**. Other screens are added by later issues.
+Scope of this version: **issue 13 (home, featured products)**, **issue 14 (category nav and category page)**, **issue 15 (search bar and results page)**, **issue 16 (product page with the enquiry dialog)** **issue 17 (enquiry form final state, server errors, sales email)** and **issue 18 (pagination on category and search)**. Other screens are added by later issues.
 
 | Screen | Route | Status |
 | --- | --- | --- |
@@ -201,18 +201,22 @@ CategoryPage
     section aria-labelledby="more-heading"
       h2 id="more-heading"                      "More in this category"   t-heading-md, ink
       ProductGrid(products=products, status="ready", onEnquire, renderTitle)
+  status "ready", total pages > 1 (issue 18):
+    Pagination(page, pageSize, total, to)       sibling after the sections, see "Pagination (issue 18)"
   status "loading":
     ProductGrid(products=[], status="loading")
   status "error":
     ProductGrid(products=[], status="error")
-  status "ready", both lists empty:
+  status "ready", page 1, both lists empty:
     ProductGrid(products=[], status="ready", emptyTitle, emptyBody)
+  status "ready", page > 1 and products empty (issue 18):
+    Alert (info) "That page does not exist." + Button secondary asChild > Link "Go to the first page"
   status "not-found" (API 404):
     h1 "Category not found" + Alert (info) with the body copy
 ```
 
 - Data: `CategoryPage` calls `api.ts` for the category using the decoded `:category` param and passes the lists straight to `ProductGrid`. `topRated` and `products` never overlap (server guarantee); no sorting, filtering, slicing or de-duplication in the component.
-- Each heading appears only when its own list is non-empty. A category with three or fewer products shows only "Top rated". No page controls, sort or filter controls (paging is #18).
+- Each heading appears only when its own list is non-empty. A category with three or fewer products shows only "Top rated". "Top rated" is on page 1 only (the server sends `topRated: []` after that); "More in this category" stays on page 2 and later while `products` is non-empty. Page controls are specified in "Pagination (issue 18)" below. No sort or filter controls.
 - `renderTitle` is a `Link` to `/products/:id`; `onEnquire` navigates to `/products/:id`, same as home.
 - Spacing: `space-5` between `h1` and the first section, `space-6` between sections below 960px and `space-7` from 960px, `space-4` between a section heading and its grid.
 - The `h1` is the first heading on this page (the header has no heading). Section headings are `h2`, cards `h3`.
@@ -347,18 +351,21 @@ SearchPage
     h2 (sr-only)                      "Matching products"
     ProductGrid(products, status="ready", onEnquire, renderTitle)
       ul > li x N > ProductCard(product, onEnquire, renderTitle)
+    Pagination(page, pageSize, total, to)             only when total pages > 1, below the grid (issue 18)
   status "loading":
     ProductGrid(products=[], status="loading")
   status "error":
     ProductGrid(products=[], status="error")          default copy
-  status "ready", no matches:
+  status "ready", page 1, no matches:
     ProductGrid(products=[], status="ready", emptyTitle, emptyBody)
+  status "ready", page > 1 and products empty (issue 18):
+    Alert (info) "That page does not exist." + Button secondary asChild > Link "Go to the first page"
   q missing or empty (no request):
     h1 "Search products"
     Notice (info)
 ```
 
-- Data: `SearchPage` reads `q` with `useSearchParams`, trims it, and calls `api.searchProducts(q)`. It passes the `Product[]` straight to `ProductGrid`. No matching, ranking, filtering or slicing in the component; the server returns provider order. One grid only, no sections, no sort or filter controls. Paging is #18.
+- Data: `SearchPage` reads `q` with `useSearchParams`, trims it, and calls `api.searchProducts(q)`. It passes the `Product[]` straight to `ProductGrid`. No matching, ranking, filtering or slicing in the component; the server returns provider order. One grid only, no sections, no sort or filter controls. Paging is specified in "Pagination (issue 18)" below; `q` and `page` both come from the URL.
 - Cards: `renderTitle` is a `Link` to `/products/:id` and `onEnquire` navigates to `/products/:id`, same as home and category. `Enquire` is the only product action.
 - `term` is the trimmed `q` shown as plain text (React escapes it), in straight double quotes.
 - A result count is not shown (no requirement).
@@ -417,6 +424,131 @@ Straight double quotes around the term. Sentence case, no exclamation marks.
 | No-term title | No search term |
 | No-term body | Enter a word to search for. |
 | Document title | Search - Catalogue |
+
+## Pagination (issue 18)
+
+Applies to the category page and the search results page. Ruled in `docs/design-gaps.md` (issue 18): composed from `Button` and react-router `Link`, no new design-system component. The URL is the state: `?page=N` on both routes, page 1 omits the param.
+
+### Pagination control
+
+`Pagination(page, pageSize, total, to)` (app-level, `client/src/components/Pagination.tsx`). Takes numbers and a URL builder, never a `Product`.
+
+```
+Pagination(page, pageSize, total, to)            renders nothing when totalPages <= 1
+  nav aria-label="Pagination"
+    Previous:
+      page > 1:   Button variant="secondary" asChild > Link to={to(page - 1)} state={{ paged: true }} rel="prev"
+                    "Previous" + span.sr-only " page"
+      page = 1:   Button variant="secondary" disabled   (real <button disabled>)
+                    "Previous" + span.sr-only " page"
+    span                                          "Page {page} of {totalPages}"   t-label, ink
+    Next:
+      page < totalPages: Button variant="secondary" asChild > Link to={to(page + 1)} state={{ paged: true }} rel="next"
+                    "Next" + span.sr-only " page"
+      page = totalPages: Button variant="secondary" disabled
+                    "Next" + span.sr-only " page"
+```
+
+`totalPages = max(1, ceil(total / pageSize))` (arithmetic only).
+
+- Targets: both buttons use the stock `Button` size: at least `touch-target` (44px) tall and wide, `t-label` text, `radius-md`, `border-control` border on `surface`, hover to the next tone. Focus is the 2px `focus` outline with 2px offset, from `Button`, never removed.
+- Disabled: a real `<button disabled>` at the ends, `surface-muted` fill with `ink-muted` text (README disabled rule). It is out of the tab order, not activatable and announced as unavailable. Enabled and disabled use the same `Button` size and the same text, so the row does not jump and Previous and Next keep their place.
+- Accessible names: visible text stays short ("Previous", "Next"); the name is completed with visually hidden text, "Previous page" and "Next page". Chosen over `aria-label` because it is the pattern `Enquire` already uses (`sr-only` " about {title}"), it is read from the DOM, and it cannot drift from the visible text. Name-in-label holds: the accessible name starts with and contains the visible text. The disabled buttons keep the same hidden text, so a screen reader says "Previous page, dimmed" or "unavailable".
+- Label: `span` "Page 2 of 5", `t-label`, `ink`, at least `touch-target` tall so it centres with the buttons. Not a link, not focusable.
+- Hidden when `totalPages <= 1`: nothing rendered, including the `nav` and its top spacing. No "Page 1 of 1".
+- No icons, page-number list, first/last, page-size selector, count or `aria-live` region (design-gaps, "Not needed").
+
+### Spacing and alignment
+
+| Where | Token |
+| --- | --- |
+| Gap above the control (from the grid or the last section) | `space-6` below 960px, `space-7` from 960px. On the category page it is the existing section gap, so the control behaves like one more block in the page stack. On search it is the same pair. |
+| Gap between Previous, label and Next | `space-3` below 600px, `space-5` from 600px |
+| Bottom | None extra; `main` bottom padding (`space-6`, `space-8` from 960px) applies |
+
+- Alignment: one row, vertically centred (`items-center`). Below 600px the row fills the container width with Previous at the left edge, Next at the right edge and the label between (`justify-between`), so the targets are at the screen edges and easy to hit. From 600px the row is centred under the grid (`justify-center`), buttons close to the label.
+- Fit at 320px: container padding is `space-4` each side, so 288px of content. "Previous" (`t-label` plus `space-4` side padding), "Page 10 of 10" and "Next" are estimated at about 266px of the 288px with `space-3` gaps, so the three items should fit on one row. This is an estimate and is not verified in a browser. If a user's own text size makes them not fit, the row wraps (`flex-wrap`, `space-3` row gap) in source order: Previous and the label on the first row, Next on the second, never clipped and never a horizontal scroll. Accepted; not a layout we draw.
+- The label's width changes with the digits ("Page 9 of 12" to "Page 10 of 12"), which can shift the buttons by a few pixels when centred from 600px. Accepted; the below-600px layout is stable because the buttons are at the edges.
+
+### Responsive
+
+Breakpoints 600px and 960px only.
+
+| Width | Layout |
+| --- | --- |
+| Below 600px | Full-width row, Previous left, Next right, label between, `space-3` gap. Above it `space-6`. |
+| 600px to 959px | Centred row, `space-5` gap. Above it `space-6`. |
+| 960px and up | Centred row, `space-5` gap. Above it `space-7`. |
+
+### Placement
+
+- Category page: after the "More in this category" section, as a sibling in the page stack (not inside "Top rated", not inside the section). It is shown when `total` gives more than one page. Page 1 of a category with three or fewer products has `total` 0, so no control.
+- Search page: directly below the results grid.
+- Not rendered while loading, in error, in an empty state, in the not-found state, or past the end. The control never shows without cards above it.
+- Tab order: after the last card's `Enquire`, Previous (or skipped if disabled), Next.
+
+### Page change: loading, focus, scroll, announcement
+
+- A click on Previous or Next changes the URL; the page content remounts (keyed on category or term plus page) and goes to loading: `ProductGrid status="loading"` placeholder cards, `aria-busy="true"`, name "Loading products". The `Pagination` control disappears during loading (not rendered until ready), and the section headings are absent as in any loading state. The `h1` stays.
+- Focus: the clicked link is gone after the remount, so `usePagedFocus` (design-gaps, issue 18) focuses the `h1` (`tabIndex={-1}`) and scrolls to the top when `location.state.paged` is true. The hook then clears the state (`navigate` with `replace`, state `null`). Direct loads, reloads, new searches and category links carry no state, so focus and scroll do not move.
+- The `h1` is the same text on every page (category name, or `Results for "term"`), so it does not say which page. The announcement is the heading being focused plus the loading region (`aria-busy`, "Loading products"); the new "Page X of Y" label is read when the user tabs to the control. No `aria-live` region.
+- Focus ring on the focused `h1`: no ring is styled. Decision: add no outline style and do not suppress the browser's. Reasons: the heading is not a control and README's "never remove it" is about interactive elements; browsers match `:focus-visible` for a script-focused heading only after keyboard use, so a keyboard user gets the browser's own cue of where focus went and a mouse user sees no stray ring on a heading. Do not use `outline-none` on it. The builder checks the browser outline is not clipped by the container.
+- Back and forward buttons restore the previous page through the URL, with no `paged` state (it is cleared after use), so focus is not forced on Back, Forward or reload, including to an entry reached via Next. Verified in a memory router only.
+- `document.title`: unchanged. Category pages keep `{category} - Catalogue`, search keeps `Search - Catalogue`. A page number would add title state that the pages do not hold and would change on each remount for little gain: the focused `h1` and the "Page X of Y" label already tell the user where they are.
+
+### Page past the end
+
+Trigger: `page > 1` and `products` is empty (not `total > 0`; `design-gaps.md`, conflict 5). The URL can reach it by editing `?page=`.
+
+```
+h1                                             unchanged (category name, or Results for "term")
+Alert (info) > AlertDescription                "That page does not exist."
+Button variant="secondary" asChild > Link to={to(1)}   "Go to the first page"
+```
+
+- `Alert` info with the info glyph, on `surface-muted`, `role="status"`, as the unknown-category notice. `space-4` between the alert and the link. Link is a secondary `Button`, at least `touch-target` tall, 2px `focus` outline with 2px offset.
+- No `Pagination`, no section headings, no grid. On the category page "Top rated" is also empty here (the server sends `[]` after page 1), so nothing else shows.
+- Page 1 with nothing to show keeps the existing empty state: category "No products found" / "No products in this category yet. Try another category."; search `No products match "term"` / "Try a different word or browse a category."
+- A malformed `page` (for example `?page=abc` or `0`) is answered by the server with 400 `fields.page`. Search shows the generic "Products did not load" error (it only treats `fields.q` as its own message); the category page shows its generic error. No new copy. Noted for the architect below the rulings in the report; the builder decides whether to parse `page` leniently on the client.
+
+### States summary
+
+| State | Control |
+| --- | --- |
+| Loading | Not shown. Placeholder cards under the `h1`. |
+| Ready, one page or fewer | Not shown. |
+| Ready, page 1 of Y | `Previous` disabled, `Page 1 of Y`, `Next` link. |
+| Ready, middle page | Both links. |
+| Ready, last page | `Previous` link, `Next` disabled. |
+| Past the end | Not shown; alert plus "Go to the first page". |
+| Error | Not shown; existing error copy, unchanged. |
+| Empty (page 1) | Not shown; existing empty copy, unchanged. |
+
+### Accessibility
+
+- One `nav` named "Pagination" per page. `rel="prev"` and `rel="next"` on the links.
+- Links are real `<a>`; the ends are real `<button disabled>`. Names: "Previous page", "Next page". Name-in-label rule holds.
+- Contrast: `ink` on `surface` for the label, `border-control` on the buttons (3:1), `ink-muted` on `surface-muted` for the disabled state (same pair as other disabled controls).
+- No colour-only state: the disabled button is also unavailable to the keyboard and screen reader, and the label states the position in words.
+- No motion: no transition or smooth scroll; `scrollTo(0, 0)` is instant.
+
+### Copy
+
+Sentence case, plain, no exclamation marks, no emoji.
+
+| Where | Text |
+| --- | --- |
+| Previous button (visible) | Previous |
+| Previous button (accessible name) | Previous page |
+| Position label | Page 2 of 5 (pattern: `Page {page} of {totalPages}`) |
+| Next button (visible) | Next |
+| Next button (accessible name) | Next page |
+| `nav` name | Pagination |
+| Past-the-end message | That page does not exist. |
+| Past-the-end link | Go to the first page |
+| Loading label (accessible only) | Loading products |
+| Error title and body | Unchanged (Products did not load / Check your connection and refresh the page to try again.) |
+| Document titles | Unchanged: `{category} - Catalogue`, `Search - Catalogue` |
 
 ## Product page
 

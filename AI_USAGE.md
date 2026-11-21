@@ -20,6 +20,7 @@ Setup issues 1 to 7 first (repo hygiene, server scaffold, design system wiring, 
 - Asked for agents and rule files before any feature code, so every stage has written constraints.
 - Asked to implement setup issues 1 to 7 on a new branch and open a PR.
 - Issue 17: told the pipeline to verify real delivery with docker compose and Mailpit, not only with fake mailers. Result: a `201`, one email in Mailpit with Reply-To set, the real product title (not the client's), and the HTML in the message inert.
+- Issue 18: told the agents to stay minimal because `PRODUCT.md` says pagination is a nice-to-have. Result: a small `paginate` helper, two schemas and one `Pagination` component, and a note in `DECISIONS.md` that it is the first thing to cut.
 
 ## Where the AI was wrong
 
@@ -60,6 +61,13 @@ Setup issues 1 to 7 first (repo hygiene, server scaffold, design system wiring, 
 - Issue 17, client: a 404 for an unknown product showed the 'check your connection' copy. The reviewer caught it; it now says 'We could not find that product. Go back to the catalogue and try again.'
 - Issue 17, client: a stale failure alert showed beside new inline errors after an invalid resubmit. The design-reviewer caught it; the alert is cleared.
 - Issue 17, review: one agent claimed no SMTP adapter test existed, while one did (`smtpMailer.test.ts`).
+- Issue 18, spec: the spec-analyst's rule for a page past the end was `total > 0`. That is wrong for a category with 3 or fewer products (`total` is 0 and `topRated` is empty on page 2+). The architect caught it; the rule is `page > 1 && products.length === 0`.
+- Issue 18, design: the designer claimed the 320px pager row fits "well under" 288px, from font-size estimates. The reviewer computed about 266px and said it can only be estimated; the docs now say so, and it is not verified in a browser.
+- Issue 18, client: `usePagedFocus` left `{ paged: true }` in history state, so a reload or Back re-focused the heading. The reviewer caught it; memory-router tests could not see it. The hook now clears the state after use.
+- Issue 18, client: a space inside the sr-only " page" span made jsdom compute the name "Nextpage". The builder fixed it.
+- Issue 18, client: "Go to the first page" was built as a primary button instead of secondary. The design-reviewer caught it.
+- Issue 18, server: a page maximum of `MAX_SAFE_INTEGER` allowed inexact offset arithmetic. The reviewer caught it; page is capped at 1,000,000.
+- Issue 18, client: the exported interface name `ProductPage` collided with the component. The reviewer caught it; it is now `ProductListPage`.
 
 ## Time spent
 

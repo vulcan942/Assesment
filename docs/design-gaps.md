@@ -81,7 +81,7 @@ All changes below are made by the frontend-builder in `client/src/components/` (
 - `<h1>` category name, then, in order: `<h2>` "Top rated" + `ProductGrid` (when `topRated` non-empty), `<h2>` "More in this category" + `ProductGrid` (when `products` non-empty).
 - Loading: one `ProductGrid` in loading state. Error: `ProductGrid` error state with default copy. Empty (both lists empty): one `ProductGrid` with `emptyTitle`/`emptyBody` set to "No products in this category yet. Try another category."
 - Unknown category (API 404): `Notice` with "We could not find that category. Choose one from the menu." The page distinguishes it by the `api.ts` error type (status 404), not by parsing messages. No new component.
-- Cards use the same `renderTitle` link and `onEnquire` navigation as home (ruled above). No sorting or filtering controls. Pagination controls are #18.
+- Cards use the same `renderTitle` link and `onEnquire` navigation as home (ruled above). No sorting or filtering controls. Pagination controls are ruled in "Issue 18".
 - Route: `/categories/:category` in `routes.tsx`; the param is decoded by react-router before use.
 
 ### Designer requests (issue 14, for the architect)
@@ -125,7 +125,7 @@ The nav error copy ("Categories did not load" / "Refresh the page to try again."
 - Loading, error and empty are `ProductGrid` states (`frontend.md`). Empty copy: `emptyTitle` "No products match "term"", `emptyBody` "Try a different word or browse a category." Error uses the default copy. No new component.
 - Missing or empty `q` in the URL (someone opens `/search` directly): no request; show a `Notice` info "Enter a word to search for." with no grid. A 400 with `fields.q` from the server (an over-long term, only reachable by editing the URL) shows a destructive `Alert` titled "Search did not run" with the server's `q` message (for example "Use 100 characters or fewer."). Other errors, and a 400 without `fields.q`, keep the generic "Products did not load" `ProductGrid` error state. The client trims only; the server collapses whitespace.
 - `document.title`: `Search - Catalogue`. A result count is not shown (no requirement).
-- Pagination controls are #18. No sort or filter controls.
+- Pagination controls are ruled in "Issue 18". No sort or filter controls.
 
 ## Issue 16 (product page)
 
@@ -184,9 +184,39 @@ Not blockers. Handled or recorded as follows.
 4. **Thank-you state. No change.** "Enquiry sent" with "Thank you. We will reply by email." and "Back to products" already meets "the customer will see a Thank you message". Success is shown only after `onSubmit` resolves, which the server does only after the email was handed to the mailer.
 5. **Not needed:** a toast, a rate-limit page, a spinner component (the button already reads "Sending…" and is disabled), a captcha. The honeypot stays hidden and `aria-hidden`.
 
+## Issue 18 (pagination)
+
+### Pagination control
+
+**Ruling: compose. One app-level `Pagination` in `client/src/components/Pagination.tsx`, no new design-system component, no new dependency.** The design system lists no pagination part. It is two `Button`s and a text label around react-router `Link`, which already exist; it needs no new token, state or glyph. It takes numbers and a URL builder, not a `Product`, so the "components accept only `Product`" rule (which is about product components) is not touched.
+
+- Props: `page`, `pageSize`, `total` (numbers) and `to(page: number): string`. It derives `totalPages = max(1, ceil(total / pageSize))`, which is arithmetic, not a business rule. It renders nothing when `totalPages <= 1`.
+- Markup: `<nav aria-label="Pagination">` holding Previous, a `<span>` "Page X of Y", and Next. Layout: one row, label between the buttons, one row is expected at 320px (estimated about 266px of 288px, not verified in a browser) and it wraps with `flex-wrap` at large text sizes.
+- Enabled control: `<Button asChild variant="secondary"><Link to={to(page ± 1)} state={{ paged: true }} rel="prev|next">Previous|Next</Link></Button>`. A real link, 44px tall from `Button`, 2px focus outline from `Button`.
+- Disabled control (page 1 Previous, last page Next): **a real `<button disabled>`** (`Button` with `disabled`), not a link with `aria-disabled`. Reason: a disabled button is out of the tab order, cannot be activated, is announced as unavailable, and `Button` already gives it the design-system disabled look (`surface-muted` fill, `ink-muted` text). A link without `href` has no role and is skipped by assistive tech; a link with `aria-disabled` stays focusable and clickable unless extra code blocks it. It stays in the layout so the row does not jump.
+- Copy: "Previous", "Page 2 of 5", "Next". Sentence case, no icons needed.
+
+### Focus and scroll after a page change
+
+**Ruling: compose, with one small hook.** The clicked link unmounts when the page remounts (content is keyed on category or term plus page), so keyboard focus would fall to the document. `lib/usePagedFocus.ts` returns a ref for the page `h1` (`tabIndex={-1}`). On mount, if `useLocation().state?.paged` is true, it focuses the `h1` and calls `window.scrollTo(0, 0)`. The hook clears the state after use (`navigate` with `replace`, state `null`), so a reload or Back or Forward does not re-focus. Direct loads and reloads have no state, so nothing moves. Both `CategoryPage` and `SearchPage` use it, which is why it is a hook rather than copied code. The `h1` is rendered in every state (loading, error, ready), so the ref is always set on mount. No `aria-live` region: focusing the heading announces the change. Do not add a focus ring style to the `h1`: browsers do not match `:focus-visible` for programmatic heading focus after a click, and the heading is not a control.
+
+### Page past the end
+
+**Ruling: compose from the existing `Alert` (info), no new component.** When `page > 1 && products.length === 0`, show the `h1` plus an info `Alert` "That page does not exist." and a "Go to the first page" link (`Button asChild variant="secondary"` around a `Link`, 44px) to `to(1)`. The test is `page > 1` and empty `products`, not `total > 0`: for a category with 3 or fewer products `total` is 0 on every page, so `total > 0` would show the wrong message (see `DECISIONS.md`). `Pagination` is not rendered in this state. Page 1 with nothing to show remains the existing empty state.
+
+### Placement
+
+- `Pagination` goes below the paged grid: on a category, below "More in this category" (not under "Top rated"); on search, below the results grid. It is not shown in loading, error, empty or past-the-end states.
+- The category page shows "Top rated" on page 1 only (the server returns `topRated: []` after that). The client already hides a section when its list is empty, so no client change. On page 2+ the "More in this category" heading remains.
+
+### Not needed
+
+Page-size selector, page-number list, "first/last" buttons, infinite scroll, a total-results count, `aria-live` region. None is in the acceptance criteria; Previous and Next with "Page X of Y" covers it.
+
 ## Conflicts found
 
 1. **`server/src/config.ts` still enforces five ids** (`.length(5, ...)`). `docs/DECISIONS.md` says the count is not enforced and blank entries are ignored. Resolution: backend-builder removes the `.length(5)` pipe (keep split, trim, filter blanks) and updates `config.test.ts`. `ARCHITECTURE.md` now matches `DECISIONS.md`.
 2. **`design-system/contract.md` had no `description`** but `GET /products/:id` returns it. Resolved in issue 16: `contract.md` now defines `ProductDetail`.
 3. **`ProductGrid` contract says category chips come from loaded products** (`contract.md`), but the API serves `GET /categories`. Resolution for the category issue: the server list wins, the client does not derive categories. Not needed for issue 13.
 4. **Server `Product.id` is `string`, contract allows `string | number`.** Compatible: the server only emits strings.
+5. **Issue 18 draft discriminated "page past the end" by `total > 0`.** Wrong for categories with 3 or fewer products. Resolved: `page > 1 && products.length === 0` (`DECISIONS.md`, `ARCHITECTURE.md`).

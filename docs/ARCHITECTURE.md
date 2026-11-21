@@ -108,36 +108,36 @@ Typed errors: `UpstreamError` (provider failed, timed out or returned malformed 
 Assumptions are in `docs/DECISIONS.md` (#14). Final contracts:
 
 - `GET /api/categories` -> `200 string[]`, raw upstream names, provider order.
-- `GET /api/categories/:category/products` -> `200 { topRated: Product[], products: Product[], page: 1, pageSize: products.length, total: products.length }`. Wire `Product` has no `rating` and no `description`. `page`/`pageSize` query params are ignored until #18. Unknown category -> `404 { error: { code: 'not_found', message: 'We could not find that.' } }`; a known empty category -> 200 with empty lists.
+- `GET /api/categories/:category/products?page&pageSize` -> `200 { topRated: Product[], products: Product[], page, pageSize, total }`. Wire `Product` has no `rating` and no `description`. The endpoint is paged (see "Pagination wiring (issue 18)"). Unknown category -> `404 { error: { code: 'not_found', message: 'We could not find that.' } }`; a known empty category -> 200 with empty lists.
 
 Server pieces:
 
 - `domain/errors.ts`: re-add `NotFoundError` (message only). `routes/errorHandler.ts` maps it to 404 with `code: 'not_found'` and the generic message 'We could not find that.' (the client supplies its own copy per page; the server does not say whether a product or a category was missing). The log line stays. The handler also maps any error with `status === 400` (bad percent-encoding, bad JSON) to `400 { error: { code: 'bad_request' } }`.
 - `services/catalogue.ts` adds to `CatalogueService`:
   - `listCategories(): Promise<string[]>` passes through `provider.listCategories()`.
-  - `getCategoryPage(category): Promise<{ topRated: Product[]; products: Product[] }>`. Steps: `listCategories()`, exact case-sensitive match, else `throw new NotFoundError`; then `provider.list()`, filter `p.category === category`, sort, `topRated = sorted.slice(0, TOP_RATED_COUNT)`, `products = sorted.slice(TOP_RATED_COUNT)`. `TOP_RATED_COUNT = 3` is a constant in this file.
-  - Ranking lives here only, using `rating` from the domain `Product`: rating descending, missing last, ties by id ascending with numeric-aware `localeCompare`. The service returns domain `Product`s; it knows nothing about `page`.
+  - `getCategoryPage(category, { page, pageSize })` (paged in #18; shape in "Pagination wiring (issue 18)"). Steps: `listCategories()`, exact case-sensitive match, else `throw new NotFoundError`; then `provider.list()`, filter `p.category === category`, sort, `topRated = sorted.slice(0, TOP_RATED_COUNT)`, `rest = sorted.slice(TOP_RATED_COUNT)`, then page `rest`. `TOP_RATED_COUNT = 3` is a constant in this file.
+  - Ranking lives here only, using `rating` from the domain `Product`: rating descending, missing last, ties by id ascending with numeric-aware `localeCompare`. The service returns domain `Product`s.
 - Routes (layering unchanged: route -> service):
   - `routes/products.ts` keeps `/products/featured` and `/products/:id` (added in #16, registered after `/products/featured`).
-  - New `routes/categories.ts` exports `categoriesRouter(catalogue)` with both category routes; `app.ts` mounts it under `/api`. It builds `{ topRated, products, page: 1, pageSize: products.length, total: products.length }`, since paging fields are response shaping, not business logic. #18 moves them to the service.
+  - New `routes/categories.ts` exports `categoriesRouter(catalogue)` with both category routes; `app.ts` mounts it under `/api`. It validates the path and paging query, calls the service and maps items through `toCard`. Paging fields come from the service (#18).
   - New `routes/wire.ts` exports `toCard(product): WireProduct` (picks `id, title, price, image, category`). `products.ts` and `categories.ts` both use it, so the "no rating or description on the wire" rule has one home. Replace the inline map in `products.ts`.
 - Param validation (zod, in the route file, before the service call; failure -> `ValidationError` -> 400):
   - `category`: `z.string().trim().min(1).max(64)`. Express has already decoded it. No character whitelist; it is only compared against the provider list.
   - Product id schema: see "Product endpoint wiring (issue 16)". It replaces the earlier `min(1).max(32)` plan.
 - Tests: service against a fake provider (top 3 order, missing rating last, tie order, unknown category throws `NotFoundError`, empty category); route tests for 200 shape with no `rating`, 404 shape, 400 on empty/over-long category, 502 on `UpstreamError`.
-- Client: `api.ts` gains `getCategories()` and `getCategoryPage(category)` (applies `encodeURIComponent`). No other module calls `fetch`.
+- Client: `api.ts` gains `getCategories()` and `getCategoryPage(category, page?)` (applies `encodeURIComponent`; `page` sent only when above 1). No other module calls `fetch`.
 
 ### Search endpoint wiring (issue 15)
 
 Assumptions are in `docs/DECISIONS.md` (#15). Final contract:
 
-- `GET /api/products?q=term` -> `200 { products: Product[], page: 1, pageSize: products.length, total: products.length }`. Wire `Product` via `toCard` (no `description`, no `rating`). `page` and `pageSize` params are ignored until #18. No match -> 200 with an empty list, not 404.
+- `GET /api/products?q=term&page&pageSize` -> `200 { products: Product[], page, pageSize, total }`. Wire `Product` via `toCard` (no `description`, no `rating`). The endpoint is paged. No match -> 200 with an empty list, not 404.
 - Invalid `q` (missing, empty or whitespace-only, over 100 chars after trimming) -> `400 { error: { code: 'validation_failed', message: 'Check the highlighted fields.', fields: { q: '<message>' } } }`, the shared shape from section 6. Suggested `fields.q`: "Enter a word to search for." (empty) and "Use 100 characters or fewer." (too long). `bad_request` is only for unreadable requests.
 - Route (`routes/products.ts`): `router.get('/products', ...)` registered next to `/products/featured`. They do not collide (different paths); `/products/:id` (added in #16) goes after `/products/featured`. Zod schema in the route file: `z.string().trim().transform(s => s.replace(/\s+/g, ' ')).pipe(z.string().min(1).max(100))`. On failure the route throws `ValidationError({ q })` with the message above; the route never calls a provider.
-- Service: `CatalogueService.search(term: string): Promise<Product[]>`. Calls `provider.list()`, keeps products where `title` or `description` lowercased `.includes` the lowercased term, in provider order, no ranking. It receives the already-normalised term and returns domain `Product`s. Search stays in the service so it works with any provider.
-- Route shapes the response: `{ products: products.map(toCard), page: 1, pageSize: n, total: n }` (as for categories; #18 moves paging into the service).
+- Service: `CatalogueService.search(term, { page, pageSize })` (paged in #18; it was `search(term): Promise<Product[]>`). Calls `provider.list()`, keeps products where `title` or `description` lowercased `.includes` the lowercased term, in provider order, no ranking. It receives the already-normalised term and pages the matches. Search stays in the service so it works with any provider.
+- Route shapes the response: `{ ...result, products: result.products.map(toCard) }` (paging fields come from the service since #18).
 - Tests: service against a fake provider (title match, description match, case-insensitive, provider order, no match -> `[]`); route tests (200 shape without `description`/`rating`, 400 with `fields.q` for missing, empty, whitespace and 101 chars, whitespace collapsed before matching, 502 on `UpstreamError`).
-- Client: `api.ts` gains `searchProducts(q)`. It builds the query string with `URLSearchParams` inside `request()` and has no paging options until #18. `SearchBar` (which uses `encodeURIComponent` to build the `/search?q=` URL) and `SearchPage` are client-side only: they navigate and fetch through `api.ts`. `RootLayout` reads `q` so the header field shows the current term.
+- Client: `api.ts` gains `searchProducts(q)`. It builds the query string with `URLSearchParams` inside `request()`; since #18 it also takes `page` (sent only when above 1). `SearchBar` (which uses `encodeURIComponent` to build the `/search?q=` URL) and `SearchPage` are client-side only: they navigate and fetch through `api.ts`. `RootLayout` reads `q` so the header field shows the current term.
 
 ### Product endpoint wiring (issue 16)
 
@@ -250,6 +250,42 @@ The route is `router.post('/enquiries', limiter, express.json({ limit: '10kb', s
 - SMTP adapter test: `createSmtpMailer` takes an optional second argument, a nodemailer `Transporter`, so the mapping test passes `createTransport({ jsonTransport: true })` (builds the message, sends nothing) and asserts from, to, reply-to, subject and text; the error test points the default transport at a closed localhost port and asserts `send` rejects (the test network guard allows localhost). No real SMTP.
 - Checking that the email reaches Mailpit (`http://localhost:8025`) is a manual step in `docker compose up`.
 
+### Pagination wiring (issue 18)
+
+Assumptions are in `docs/DECISIONS.md` (#18). Nice-to-have. No "ignored until #18" line remains above; both list endpoints read `page` and `pageSize`.
+
+**Contract.**
+
+| Endpoint | Success |
+| --- | --- |
+| `GET /api/categories/:category/products?page&pageSize` | `{ topRated, products, page, pageSize, total }`. `topRated` is the top 3 on page 1 and `[]` on page 2+. `products` is the page of the remainder. `total` is the size of the remainder. |
+| `GET /api/products?q=&page&pageSize` | `{ products, page, pageSize, total }`; `total` is the match count. |
+
+`GET /products/featured` and `GET /categories` are not paged.
+
+**Schema** (in `routes/schemas.ts`, shared by both list routes, zod 4):
+
+- `page`: digit string, integer, at least 1, default 1. `pageSize`: digit string, integer 1 to 50, default 12. A strict `/^\d+$/` string (not `z.coerce.number()`), so `1e1`, `0x10`, empty and repeated params (arrays) fail.
+- Failure -> `ValidationError({ page?: 'Use a whole number from 1 to 1000000.', pageSize?: 'Use a whole number from 1 to 50.' })` -> `400 validation_failed`. Never clamped. `page` is capped at 1,000,000 so the offset arithmetic stays exact. On search these merge with the `q` message into one `fields`.
+
+**Service.**
+
+- One non-exported helper in `services/catalogue.ts`: `paginate(items, page, pageSize)` returns `{ items: items.slice((page - 1) * pageSize, page * pageSize), page, pageSize, total: items.length }`. It knows nothing about products or providers.
+- `getCategoryPage(category, { page, pageSize })`: after the 404 check, rank, `topRated = sorted.slice(0, 3)`, `paginate(sorted.slice(3), ...)`; returns `{ topRated: page === 1 ? topRated : [], products, page, pageSize, total }`.
+- `search(term, { page, pageSize })`: filter in provider order, `paginate(matches, ...)`; returns `{ products, page, pageSize, total }`.
+- Routes parse the query, call the service, map `topRated`/`products` through `toCard`. No slicing in routes, no counting in the client.
+
+**Edge cases.**
+
+- Page past the end: `200`, empty `products`, real `total`, never an error.
+- A category with 3 or fewer products: page 1 has `topRated` and empty `products`, `total: 0`; page 2+ has both empty. The client treats `page > 1 && products.length === 0` as "That page does not exist.", and page 1 with both lists empty as the empty state.
+- Order: validate paging first, then look up the category. Bad paging is `400` even for an unknown category; a valid page of an unknown category is `404` on any page.
+- `pageSize` is echoed as requested, even if fewer items remain.
+
+**Client.** `Pagination` (`components/Pagination.tsx`, app-level) takes `page`, `pageSize`, `total`, `to(page)`; it computes `totalPages = max(1, ceil(total / pageSize))` and renders nothing at 1. `CategoryPage` and `SearchPage` read `?page=` (sanitised to an integer >= 1, else 1), pass it to `api.ts`, key the content on term or category plus page, and wire `to`. `lib/usePagedFocus.ts` focuses the `h1` and scrolls to top when the location state is `{ paged: true }`, then clears that state (`navigate` with `replace`, state `null`) so reload and Back or Forward do not re-focus. Design details: `docs/design-gaps.md`, issue 18.
+
+**Tests.** Service against a fake provider: page 1, page 2, past the end, `topRated` empty on page 2, 3-or-fewer category, search paging. Route: defaults, 400 for `0`, `-1`, `1.5`, `abc`, `1e1`, `pageSize=51`, repeated `page`, merged `q` and `page` errors, echoed `page`/`pageSize`. Client: Pagination hidden at one page, Previous/Next disabled at the ends, links carry `?page=`, page-past-end message, focus on the `h1` after a paged navigation.
+
 ### Service responsibilities
 
 - **Catalogue service**: featured products (configured ID list, in that order), categories, category page (top rated first, then the rest, no duplicates), search, product by id, pagination.
@@ -264,8 +300,8 @@ Read-only `GET` for catalogue data and one `POST` for enquiries. All under `/api
 | `GET /health` | Liveness | `{ "status": "ok" }` |
 | `GET /products/featured` | Home page: the configured products, in configured order (five in `.env.example`) | `Product[]` (no `description`, no `rating`) |
 | `GET /categories` | Category links | `string[]` |
-| `GET /categories/:category/products` | Category page. `page` and `pageSize` are ignored until #18; `total` and `pageSize` count only `products`, not `topRated` | `{ topRated: Product[], products: Product[], page, pageSize, total }` |
-| `GET /products?q=&page&pageSize` | Search | `{ products: Product[], page, pageSize, total }` |
+| `GET /categories/:category/products?page&pageSize` | Category page. `topRated` is on page 1 only; `products` is the paged remainder and `total` counts only it | `{ topRated: Product[], products: Product[], page, pageSize, total }` |
+| `GET /products?q=&page&pageSize` | Search, paged | `{ products: Product[], page, pageSize, total }` |
 | `GET /products/:id` | Product details | `ProductDetail` |
 | `POST /enquiries` | Enquire | `201 { "status": "sent" }` |
 
@@ -273,7 +309,7 @@ Response shapes:
 
 - `Product` is the design-system shape from `design-system/contract.md`: `id, title, price?, image?, category?`. The server drops `rating` and `description` here.
 - `ProductDetail` is `Product` plus `description?` (settled in `DECISIONS.md`; `contract.md` updated). `rating` is never sent.
-- `topRated` is not paginated; `products` holds the additional items and is paginated.
+- `topRated` is not paginated: it is sent on page 1 and is `[]` on page 2 and later. `products` holds the additional items and is paginated.
 
 Errors share one shape and the right status:
 
@@ -302,7 +338,7 @@ client/src/
   lib/api.ts          the only place that calls fetch; typed, one error type
   lib/                format, enquiry types, other helpers
   components/ui/      shadcn components (the design system)
-  components/         product-aware components (ProductCard, ProductGrid, CategoryNav, EnquiryForm, ...)
+  components/         product-aware components (ProductCard, ProductGrid, CategoryNav, EnquiryForm, Pagination, ...)
   pages/              Home, Category, Search and Product (all done); each handles loading, error, empty. `ProductPage` (`/products/:id`) also holds the Enquire button and the enquiry dialog around `EnquiryForm`. `NotFoundPage` is the `*` catch-all
   index.css           design tokens as CSS variables, the only home of colours
 ```
