@@ -201,3 +201,85 @@ describe('SearchPage pagination', () => {
     expect(screen.queryByRole('navigation', { name: 'Pagination' })).not.toBeInTheDocument()
   })
 })
+
+describe('SearchPage pagination edges', () => {
+  const paged = (n: number, total: number, products: ProductPage['products']): ProductPage => ({
+    products,
+    page: n,
+    pageSize: 12,
+    total,
+  })
+  const many = (n: number) => Array.from({ length: n }, (_, i) => item(10 + i, `Item ${i}`))
+  const scrollTo = vi.fn()
+  beforeEach(() => {
+    vi.stubGlobal('scrollTo', scrollTo)
+    scrollTo.mockClear()
+    mocked.mockReset()
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('shows no pagination for exactly 12 results', async () => {
+    mocked.mockResolvedValue(paged(1, 12, many(12)))
+    renderAt('/search?q=item')
+    await screen.findByRole('link', { name: 'Item 0' })
+    expect(screen.queryByRole('navigation', { name: 'Pagination' })).not.toBeInTheDocument()
+  })
+
+  it('shows Page 1 of 2 for 13 results', async () => {
+    mocked.mockResolvedValue(paged(1, 13, many(12)))
+    renderAt('/search?q=item')
+    expect(await screen.findByText('Page 1 of 2')).toBeInTheDocument()
+  })
+
+  it('keeps q in the address when going to the next page and back', async () => {
+    mocked.mockResolvedValue(paged(1, 30, many(12)))
+    const router = createMemoryRouter(routes, { initialEntries: ["/search?q=men's%20shirt"] })
+    render(<RouterProvider router={router} />)
+    await screen.findByText('Page 1 of 3')
+    mocked.mockResolvedValue(paged(2, 30, many(12)))
+    await userEvent.click(screen.getByRole('link', { name: 'Next page' }))
+    await screen.findByText('Page 2 of 3')
+    expect(router.state.location.search).toBe("?q=men's%20shirt&page=2")
+    await userEvent.click(screen.getByRole('link', { name: 'Previous page' }))
+    await screen.findByText('Page 1 of 3')
+    expect(router.state.location.search).toBe("?q=men's%20shirt")
+  })
+
+  it('skips the disabled Previous button in the tab order on page 1', async () => {
+    mocked.mockResolvedValue(paged(1, 30, many(12)))
+    renderAt('/search?q=item')
+    await screen.findByText('Page 1 of 3')
+    const stops: Array<Element | null> = []
+    for (let i = 0; i < 40; i++) {
+      await userEvent.tab()
+      stops.push(document.activeElement)
+    }
+    expect(stops).toContain(screen.getByRole('link', { name: 'Next page' }))
+    expect(stops).not.toContain(screen.getByRole('button', { name: 'Previous page' }))
+  })
+
+  it('does not focus the heading or scroll on a first load of page 2', async () => {
+    mocked.mockResolvedValue(paged(2, 30, many(12)))
+    renderAt('/search?q=item&page=2')
+    await screen.findByText('Page 2 of 3')
+    expect(screen.getByRole('heading', { level: 1 })).not.toHaveFocus()
+    expect(scrollTo).not.toHaveBeenCalled()
+  })
+
+  it('scrolls to the top exactly once after Next is clicked', async () => {
+    mocked.mockResolvedValue(paged(1, 30, many(12)))
+    renderAt('/search?q=item')
+    await screen.findByText('Page 1 of 3')
+    mocked.mockResolvedValue(paged(2, 30, many(12)))
+    await userEvent.click(screen.getByRole('link', { name: 'Next page' }))
+    await screen.findByText('Page 2 of 3')
+    expect(scrollTo).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows the generic error, not the search rejection, for a 400 about page', async () => {
+    mocked.mockRejectedValue(new ApiError(400, 'validation_failed', 'Check.', { page: 'Use a whole number from 1.' }))
+    renderAt('/search?q=item&page=2')
+    expect(await screen.findByText('Products did not load')).toBeInTheDocument()
+    expect(screen.queryByText('Search did not run')).not.toBeInTheDocument()
+  })
+})

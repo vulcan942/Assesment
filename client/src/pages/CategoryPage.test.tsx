@@ -205,3 +205,115 @@ describe('CategoryPage pagination', () => {
     expect(screen.queryByText('That page does not exist.')).not.toBeInTheDocument()
   })
 })
+
+describe('CategoryPage pagination edges', () => {
+  const at = (n: number, total: number, topRated: CategoryData['topRated'], products: CategoryData['products']): CategoryData => ({
+    topRated,
+    products,
+    page: n,
+    pageSize: 12,
+    total,
+  })
+  const three = [item(1, 'A'), item(2, 'B'), item(3, 'C')]
+  const many = (n: number) => Array.from({ length: n }, (_, i) => item(10 + i, `Item ${i}`))
+  const renderAt = (url: string) => {
+    const router = createMemoryRouter(routes, { initialEntries: [url] })
+    render(<RouterProvider router={router} />)
+    return router
+  }
+  const scrollTo = vi.fn()
+  beforeEach(() => {
+    vi.stubGlobal('scrollTo', scrollTo)
+    scrollTo.mockClear()
+    mocked.mockReset()
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  async function tabStops() {
+    const stops: Array<Element | null> = []
+    for (let i = 0; i < 40; i++) {
+      await userEvent.tab()
+      stops.push(document.activeElement)
+    }
+    return stops
+  }
+
+  it('shows no pagination and no past-the-end notice for exactly three products', async () => {
+    mocked.mockResolvedValue(at(1, 0, three, []))
+    renderAt('/categories/electronics')
+    await screen.findByRole('heading', { name: 'Top rated' })
+    expect(screen.queryByRole('navigation', { name: 'Pagination' })).not.toBeInTheDocument()
+    expect(screen.queryByText('That page does not exist.')).not.toBeInTheDocument()
+  })
+
+  it('shows no pagination for 13 products, where 10 follow the top three', async () => {
+    mocked.mockResolvedValue(at(1, 10, three, many(10)))
+    renderAt('/categories/electronics')
+    await screen.findByRole('heading', { name: 'More in this category' })
+    expect(screen.queryByText(/Page 1 of/)).not.toBeInTheDocument()
+  })
+
+  it('shows no pagination for 15 products, where 12 follow the top three', async () => {
+    mocked.mockResolvedValue(at(1, 12, three, many(12)))
+    renderAt('/categories/electronics')
+    await screen.findByRole('heading', { name: 'More in this category' })
+    expect(screen.queryByRole('navigation', { name: 'Pagination' })).not.toBeInTheDocument()
+  })
+
+  it('shows Page 1 of 2 for 16 products, where 13 follow the top three', async () => {
+    mocked.mockResolvedValue(at(1, 13, three, many(12)))
+    renderAt('/categories/electronics')
+    expect(await screen.findByText('Page 1 of 2')).toBeInTheDocument()
+  })
+
+  it('encodes a category name with an apostrophe and a space in both links', async () => {
+    mocked.mockResolvedValue(at(2, 40, [], many(12)))
+    renderAt("/categories/men's%20clothing?page=2")
+    await screen.findByText('Page 2 of 4')
+    expect(mocked).toHaveBeenCalledWith("men's clothing", 2)
+    expect(screen.getByRole('link', { name: 'Previous page' })).toHaveAttribute('href', "/categories/men's%20clothing")
+    expect(screen.getByRole('link', { name: 'Next page' })).toHaveAttribute('href', "/categories/men's%20clothing?page=3")
+  })
+
+  it('skips the disabled Previous button in the tab order on page 1', async () => {
+    mocked.mockResolvedValue(at(1, 100, three, many(12)))
+    renderAt('/categories/electronics')
+    await screen.findByText('Page 1 of 9')
+    const stops = await tabStops()
+    expect(stops).toContain(screen.getByRole('link', { name: 'Next page' }))
+    expect(stops).not.toContain(screen.getByRole('button', { name: 'Previous page' }))
+  })
+
+  it('skips the disabled Next button in the tab order on the last page', async () => {
+    mocked.mockResolvedValue(at(9, 100, [], many(4)))
+    renderAt('/categories/electronics?page=9')
+    await screen.findByText('Page 9 of 9')
+    const stops = await tabStops()
+    expect(stops).toContain(screen.getByRole('link', { name: 'Previous page' }))
+    expect(stops).not.toContain(screen.getByRole('button', { name: 'Next page' }))
+  })
+
+  it('does not focus the heading or scroll on a first load of page 2', async () => {
+    mocked.mockResolvedValue(at(2, 40, [], many(12)))
+    renderAt('/categories/electronics?page=2')
+    await screen.findByText('Page 2 of 4')
+    expect(screen.getByRole('heading', { level: 1 })).not.toHaveFocus()
+    expect(scrollTo).not.toHaveBeenCalled()
+  })
+
+  it('scrolls to the top exactly once after Next is clicked', async () => {
+    mocked.mockResolvedValue(at(1, 40, three, many(12)))
+    renderAt('/categories/electronics')
+    await screen.findByText('Page 1 of 4')
+    mocked.mockResolvedValue(at(2, 40, [], many(12)))
+    await userEvent.click(screen.getByRole('link', { name: 'Next page' }))
+    await screen.findByText('Page 2 of 4')
+    expect(scrollTo).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows the error notice when the server rejects the page with a 400', async () => {
+    mocked.mockRejectedValue(new ApiError(400, 'validation_failed', 'Check.', { page: 'Use a whole number from 1.' }))
+    renderAt('/categories/electronics?page=2')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Products did not load')
+  })
+})

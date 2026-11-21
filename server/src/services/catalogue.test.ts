@@ -251,3 +251,38 @@ describe('listCategories', () => {
     expect(await createCatalogueService({ provider, featuredIds: [] }).listCategories()).toEqual(['men', 'women'])
   })
 })
+
+describe('default page size boundaries (12)', () => {
+  const size = { page: 1, pageSize: 12 }
+  const hats = (n: number) => Array.from({ length: n }, (_, i) => item(String(i + 1), 'a hat'))
+  const search = (n: number, page: number) =>
+    createCatalogueService({ provider: fakeProductProvider(hats(n)), featuredIds: [] }).search('hat', { ...size, page })
+  // rating n for id n: ranking runs n..1, the top three are the highest ids, the remainder is n - 3
+  const category = (n: number, p: number) =>
+    page(Array.from({ length: n }, (_, i) => rated(String(i + 1), i + 1)), 'men', { ...size, page: p })
+
+  it('search with exactly 12 matches fills page 1 and leaves page 2 empty', async () => {
+    expect((await search(12, 1)).products).toHaveLength(12)
+    expect(await search(12, 2)).toMatchObject({ products: [], total: 12 })
+  })
+
+  it('search with 13 matches puts the thirteenth on page 2', async () => {
+    expect((await search(13, 1)).products).toHaveLength(12)
+    expect(ids((await search(13, 2)).products)).toEqual(['13'])
+  })
+
+  it('category with 13 products shows 10 after the top three, all on page 1', async () => {
+    const r = await category(13, 1)
+    expect(r.topRated).toHaveLength(3)
+    expect(r.products).toHaveLength(10)
+    expect(r.total).toBe(10)
+  })
+
+  it('category with 15 products fits the remainder of 12 on one page', async () => {
+    expect(await category(15, 2)).toMatchObject({ products: [], total: 12 })
+  })
+
+  it('category with 16 products spills the lowest ranked product to page 2', async () => {
+    expect(ids((await category(16, 2)).products)).toEqual(['1'])
+  })
+})
