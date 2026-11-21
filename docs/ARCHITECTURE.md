@@ -167,13 +167,13 @@ Each is tested on its own: an adapter test for mapping and error handling, and s
 
 The mock source is [Fake Store API](https://fakestoreapi.com/docs) (`/products`, `/products/:id`, `/products/categories`). Only `server/src/providers/fakestore/` knows its URLs, field names (`rating.rate`, `image`, ...) and failure modes. It maps them to `Product` and turns timeouts, non-2xx and malformed JSON into `UpstreamError`.
 
-Any other source (SQL, MongoDB, DynamoDB, a CMS) is a new folder under `providers/` that implements `ProductProvider`, plus one case in the composition root and one `PRODUCT_SOURCE` value. To keep that cheap:
+Any other source is a new folder under `providers/` that implements `ProductProvider`, plus one case in the composition root and one `PRODUCT_SOURCE` value. To keep that cheap:
 
-- The interface speaks in `Product`, string ids and category names, never in rows, queries or upstream JSON.
-- An adapter owns its own settings (a DB adapter reads its own connection variable, added to `config.ts` and `.env.example` only when selected). Services never see connection details.
-- Adapters return `null` for an unknown id and throw `UpstreamError` for any driver or network failure. No driver error reaches a service.
+- The interface speaks in `Product`, string ids and category names, never in upstream JSON.
+- An adapter owns its own settings (like `FAKESTORE_BASE_URL`), added to `config.ts` and `.env.example` when that adapter is selected. Services never see them.
+- Adapters return `null` for an unknown id and throw `UpstreamError` for any network or data failure. No raw upstream error reaches a service.
 - Search, top rated, pagination and category grouping stay in the catalogue service, so they work unchanged on any source.
-- Known ceiling: the service filters the result of `list()` in memory. That is fine for a catalogue of hundreds of items. For a large DB, add optional `search` or paging methods to `ProductProvider` and push the filtering down, without changing routes or the client.
+- Known ceiling: the service filters the result of `list()` in memory. That is fine for a catalogue of hundreds of items. For a large source, add optional `search` or paging methods to `ProductProvider` and push the filtering down, without changing routes or the client.
 - Each adapter has its own test for mapping and error handling. Service tests use a fake provider and stay untouched.
 
 ## 9. Enquiry flow
