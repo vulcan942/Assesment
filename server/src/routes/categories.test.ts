@@ -26,6 +26,7 @@ const stub = (o: Partial<CatalogueService>): CatalogueService => ({
   listCategories: reject,
   getCategoryPage: reject,
   search: reject,
+  getProduct: reject,
   ...o,
 })
 const failWith = (err: Error) => async (): Promise<never> => {

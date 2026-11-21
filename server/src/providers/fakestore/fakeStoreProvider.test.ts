@@ -49,6 +49,16 @@ describe('fake store provider', () => {
     expect(requested).toBe('https://store.test/products/7')
   })
 
+  it.each(['..', '.', 'a/b', 'a b', ''])('returns null without calling upstream for the unsafe id %j', async (id) => {
+    let calls = 0
+    const fetchFn = (async () => {
+      calls++
+      return new Response(JSON.stringify(upstream))
+    }) as unknown as typeof fetch
+    expect(await providerWith(fetchFn).getById(id)).toBeNull()
+    expect(calls).toBe(0)
+  })
+
   it('returns null for an unknown id answered with 404', async () => {
     expect(await providerWith(reply('', 404)).getById('99')).toBeNull()
   })

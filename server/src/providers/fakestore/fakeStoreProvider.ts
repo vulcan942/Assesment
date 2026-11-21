@@ -66,6 +66,8 @@ export function createFakeStoreProvider(
       return parse(z.array(upstreamProduct), await get('products'), '/products').map(toProduct)
     },
     async getById(id) {
+      // Dot segments like '..' survive encoding and would resolve outside /products; such ids cannot exist upstream.
+      if (!/^[\w-]+$/.test(id)) return null
       const data = await get(`products/${encodeURIComponent(id)}`)
       return data === null ? null : toProduct(parse(upstreamProduct, data, '/products/:id'))
     },

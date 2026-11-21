@@ -1,3 +1,4 @@
+import http from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp } from '../app.ts'
@@ -25,6 +26,7 @@ const stub = (overrides: Partial<CatalogueService>): CatalogueService => ({
   listCategories: reject,
   getCategoryPage: reject,
   search: reject,
+  getProduct: reject,
   ...overrides,
 })
 const failing = (err: Error): CatalogueService =>
@@ -172,6 +174,86 @@ describe('GET /api/products (search)', () => {
     }
     const res = await fetch(`${start(stub({ search }))}/api/products?q=a`)
     expect(res.status).toBe(502)
+  })
+})
+
+// fetch() normalises dot segments before sending, so raw paths go through node:http.
+function rawGet(base: string, path: string): Promise<{ status: number; body: unknown }> {
+  return new Promise((resolve, reject) => {
+    const { hostname, port } = new URL(base)
+    http
+      .get({ hostname, port, path }, (res) => {
+        let text = ''
+        res.on('data', (c) => (text += c))
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, body: text ? JSON.parse(text) : null }))
+      })
+      .on('error', reject)
+  })
+}
+
+describe('GET /api/products/:id', () => {
+  const full = { id: '1', title: 'Shirt', price: 9.5, image: 'i.png', category: 'men', description: 'long', rating: 4.5 }
+  const withProducts = (provider = fakeProductProvider([full, { id: '2', title: 'Hat' }])) =>
+    start(createCatalogueService({ provider, featuredIds: ['1'] }))
+  const invalid = {
+    error: { code: 'validation_failed', message: 'Check the highlighted fields.', fields: { id: 'That product link is not valid.' } },
+  }
+
+  it('returns the detail with description and without rating', async () => {
+    const res = await fetch(`${withProducts()}/api/products/1`)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ id: '1', title: 'Shirt', price: 9.5, image: 'i.png', category: 'men', description: 'long' })
+  })
+
+  it('omits description when the product has none', async () => {
+    const res = await fetch(`${withProducts()}/api/products/2`)
+    expect(await res.json()).toEqual({ id: '2', title: 'Hat' })
+  })
+
+  it('returns 404 with the shared shape for an unknown id', async () => {
+    const res = await fetch(`${withProducts()}/api/products/999`)
+    expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({ error: { code: 'not_found', message: 'We could not find that.' } })
+  })
+
+  it.each(['a%20b', '%207%20', 'a.b', 'a'.repeat(65)])('returns 400 for id %s', async (id) => {
+    const res = await fetch(`${withProducts()}/api/products/${id}`)
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual(invalid)
+  })
+
+  it.each(['..', '.', '%2e%2e', '%2e', 'a%2Fb'])('returns 400 and never calls the provider for raw id %s', async (id) => {
+    const provider = fakeProductProvider([full])
+    const getById = vi.spyOn(provider, 'getById')
+    const res = await rawGet(withProducts(provider), `/api/products/${id}`)
+    expect(res.status).toBe(400)
+    expect(res.body).toEqual(invalid)
+    expect(getById).not.toHaveBeenCalled()
+  })
+
+  it('does not route an empty id to the provider', async () => {
+    const provider = fakeProductProvider([full])
+    const getById = vi.spyOn(provider, 'getById')
+    const res = await fetch(`${withProducts(provider)}/api/products/`)
+    expect(res.status).not.toBe(200)
+    expect(getById).not.toHaveBeenCalled()
+  })
+
+  it('returns 502 when upstream fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const res = await fetch(`${withProducts(fakeProductProvider([], new UpstreamError('boom')))}/api/products/1`)
+    expect(res.status).toBe(502)
+  })
+
+  it('does not shadow /products/featured', async () => {
+    const res = await fetch(`${withProducts()}/api/products/featured`)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual([{ id: '1', title: 'Shirt', price: 9.5, image: 'i.png', category: 'men' }])
+  })
+
+  it('still serves /products?q search', async () => {
+    const res = await fetch(`${withProducts()}/api/products?q=hat`)
+    expect(((await res.json()) as { products: unknown[] }).products).toEqual([{ id: '2', title: 'Hat' }])
   })
 })
 
