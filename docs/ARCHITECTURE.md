@@ -163,6 +163,19 @@ client/src/
 
 Each is tested on its own: an adapter test for mapping and error handling, and service tests against fake providers.
 
+### Product data source
+
+The mock source is [Fake Store API](https://fakestoreapi.com/docs) (`/products`, `/products/:id`, `/products/categories`). Only `server/src/providers/fakestore/` knows its URLs, field names (`rating.rate`, `image`, ...) and failure modes. It maps them to `Product` and turns timeouts, non-2xx and malformed JSON into `UpstreamError`.
+
+Any other source is a new folder under `providers/` that implements `ProductProvider`, plus one case in the composition root and one `PRODUCT_SOURCE` value. To keep that cheap:
+
+- The interface speaks in `Product`, string ids and category names, never in upstream JSON.
+- An adapter owns its own settings (like `FAKESTORE_BASE_URL`), added to `config.ts` and `.env.example` when that adapter is selected. Services never see them.
+- Adapters return `null` for an unknown id and throw `UpstreamError` for any network or data failure. No raw upstream error reaches a service.
+- Search, top rated, pagination and category grouping stay in the catalogue service, so they work unchanged on any source.
+- Known ceiling: the service filters the result of `list()` in memory. That is fine for a catalogue of hundreds of items. For a large source, add optional `search` or paging methods to `ProductProvider` and push the filtering down, without changing routes or the client.
+- Each adapter has its own test for mapping and error handling. Service tests use a fake provider and stay untouched.
+
 ## 9. Enquiry flow
 
 ```
@@ -214,12 +227,6 @@ All config is environment variables, read and validated once at start-up (`confi
 
 The Dockerfiles and env-only config run on ECS or App Runner as they are. SES replaces Mailpit by adding a `Mailer` adapter and setting `MAIL_PROVIDER`. A managed catalogue replaces Fake Store by adding a `ProductProvider` adapter. No code outside the adapter and config changes.
 
-## 14. Open decisions
+## 14. Decisions
 
-Each needs an owner to settle it and a line in `docs/DECISIONS.md`.
-
-1. **Product detail fields.** `design-system/contract.md` omits `description`, but the product page should show "full details". Proposal: `GET /products/:id` returns `Product` plus `description`; extend the contract with an optional `description` on that one endpoint.
-2. **Routing.** Four pages need client-side routing, and CLAUDE.md says no new libraries without asking. Proposal: add `react-router`. The alternative, hash or query-string state by hand, is more code than the dependency.
-3. **"Top rated" size per category.** The criteria do not say how many. Proposal: top 3 by rating, a constant in the catalogue service.
-4. **Caching.** Fake Store is slow and public. Proposal for the PoC: none; add an in-memory TTL cache inside the provider only if latency hurts.
-5. **Naming.** Agent and skill files call the interfaces `ProductSource` and `EmailSender`; the rules and this document use `ProductProvider` and `Mailer`. This document is the reference; the agent and skill files should be aligned.
+Settled in `docs/DECISIONS.md`: product detail fields, routing, top-rated size, caching, interface naming.

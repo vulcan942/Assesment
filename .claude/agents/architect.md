@@ -12,7 +12,7 @@ Job:
 1. Write `docs/ARCHITECTURE.md`:
    - client -> server API -> providers, with the folder layout for `client/` and `server/`.
    - API contract: endpoints, request and response shapes (the server returns the normalised `Product` from `design-system/contract.md`; the Fake Store mapping lives in the server's product provider).
-   - Provider interfaces: `ProductSource` and `EmailSender`, chosen by config at startup. Name the first implementation of each (Fake Store; a local SMTP catcher such as Mailpit so no paid account is needed).
+   - Provider interfaces: `ProductProvider` and `Mailer`, chosen by config at startup. Name the first implementation of each (Fake Store; a local SMTP catcher such as Mailpit so no paid account is needed).
    - Where ranking, top-rated selection, filtering and search happen (server only).
    - docker-compose shape and the env variables for `.env.example`.
 2. Review the design system against the five features. Write `docs/design-gaps.md`: for each missing piece (for example SiteHeader, SearchBar, PageContainer, SectionHeading, ProductDetail), rule "compose from existing components" or "new component", with the reason. Prefer composing. A new component needs a reason the existing ones cannot cover.
