@@ -27,7 +27,7 @@ Rulings on pieces the five features need that `design-system/README.md` does not
 | --- | --- | --- |
 | Section heading ("Featured products") | Compose: `<h2>` with `t-heading-md` | A styled heading tag; no behaviour. |
 | Featured list | Compose: `ProductGrid` of `ProductCard` | Already has loading (placeholder cards, `aria-busy`) and empty states. Empty copy: "No featured products right now. Try browsing a category." Error state: `Notice` danger with what happened and what to do. |
-| Card link to `/products/:id` | Compose: card title as a link inside `ProductCard` | `Enquire` stays the only action. If `ProductCard` has no link to the product page yet, the optional `renderTitle` prop on the title is a change to an existing component, not a new one (see request 3, resolved). The product page itself is a later issue; until it exists the route can be a placeholder. |
+| Card link to `/products/:id` | Compose: card title as a link inside `ProductCard` | `Enquire` stays the only action. If `ProductCard` has no link to the product page yet, the optional `renderTitle` prop on the title is a change to an existing component, not a new one (see request 3, resolved). The product page was built in issue 16 (see below). |
 | Home hero | Not needed | `t-display` is allowed but optional. Skipped: no requirement. |
 
 ## Designer requests (issue 13, for the architect)
@@ -127,9 +127,56 @@ The nav error copy ("Categories did not load" / "Refresh the page to try again."
 - `document.title`: `Search - Catalogue`. A result count is not shown (no requirement).
 - Pagination controls are #18. No sort or filter controls.
 
+## Issue 16 (product page)
+
+The design system (`README.md`, `design-system.json`) has no `ProductDetail` component, so it is composed. All rulings: compose, no new design-system part.
+
+### ProductDetail layout
+
+**Ruling: compose in `client/src/pages/ProductPage.tsx`. No `ProductDetail` component.** One page uses it; a component with one caller adds a boundary for nothing.
+
+- Fetches with `getProduct(id)` from `api.ts` and owns loading, error (retry) and not-found states, as the other pages do.
+- Ready state: a "Back to products" `Link` to `/` (README label), then a two-column block from 600px (image well left, text right; one column below). Image well is the `ProductCard` one (`bg-muted`, contained, never cropped). Text column: category as a `Link` to `/categories/${encodeURIComponent(category)}` (`t-caption`, hidden when missing), `<h1>` title, price (`t-price`, hidden when missing, `formatPrice`), `description` in a `<p>` (`t-body`, hidden when missing), then the `Enquire` `Button`.
+- `Enquire` is the default (primary) `Button`: it is the one action on this page, and the README reserves secondary for cards. The dialog's `Send enquiry` is also primary, but the dialog covers the page, so there is never a competing primary.
+- Links use the 44px tap area and 2px focus outline classes already used in `NotFoundPage` and the card title link.
+
+### Enquire dialog and focus return
+
+**Ruling: compose `Dialog` (already in `components/ui`) around `EnquiryForm`.**
+
+- `DialogTrigger asChild` wraps the `Enquire` button, so Radix returns focus to it on close with no code of ours. `DialogTitle` "Enquire about {title}" is required for the accessible name; no `DialogDescription` unless Radix warns.
+- `onCancel` closes the dialog (focus returns to `Enquire`). Escape and the close button do the same.
+- Conflict found: the form's success state shows a "Back to products" button that calls `onDone`. Closing the dialog would leave the person on the same page under a button with the wrong label. Ruling: `onDone` navigates to `/` (the label stays true) and the dialog unmounts with the page. No change to `EnquiryForm`.
+- Pass `product` to `EnquiryForm` so it shows the product summary and prefills the message. Do not pass `description` or anything else; it takes only `Product`.
+
+### Injecting onSubmit
+
+**Ruling: `ProductPage` imports `sendEnquiry` from `lib/api.ts` and passes it as `onSubmit`.** `EnquiryForm` still only knows the injected `SubmitEnquiry` type, so it stays provider-agnostic; the page is the one place that wires it (`ARCHITECTURE.md` section 7). No context, no prop drilling beyond one level, since only this page opens the form. Until #17 adds `POST /enquiries` the form shows its honest "Enquiry not sent" error, as in `DECISIONS.md`.
+
+### Image fallback
+
+**Ruling: do not extract yet.** The fallback is a four-line `useState` plus an `onError` and a "No image" span in `ProductCard`, and the detail page needs a larger well with different sizing. Duplicate it in `ProductPage` (second use). Extract an `ImageWell` only if a third place needs it, matching the `renderTitle` rule above. Copy must stay identical: alt is the product title, fallback text is "No image".
+
+### Back link and category link
+
+**Ruling: compose with `Link`.** One "Back to products" to `/` and the category as a link; no breadcrumb component and no history tricks (the user's browser Back button already returns them to the search or category they came from, which `/` would not).
+
+### Not-found state
+
+**Ruling: compose inside `ProductPage`; do not reuse `NotFoundPage` as a component.** It says "This page does not exist.", which is wrong for a product. `ProductPage` shows an info `Alert`/heading "We could not find that product." with body "It may have been removed. Browse the catalogue to find something else." and the same "Go to the catalogue" link style as `NotFoundPage`. Trigger: `error instanceof ApiError && (status === 404 || (status === 400 && fields?.id))`; the person cannot tell these apart. Other errors (network, 5xx) use an error state with a "Try again" button (a real `<button>`, 44px) and the sentence "Product did not load. Check your connection and try again." `document.title` per `DECISIONS.md`.
+
+### Designer notes (issue 16, for the architect, no new component)
+
+Not blockers. Handled or recorded as follows.
+
+1. **Dialog scrim and width are not tokens.** `components/ui/dialog.tsx` uses `ink` at 50% opacity for the scrim and a stock maximum width (`sm:max-w-lg`). `tokens.json` has no overlay or dialog-width token. Accepted as is for the PoC; add a token only if branding needs to change them.
+2. **Dialog close button size.** The stock close button uses `size="icon"`; Verified: it reaches 44px, so no change.
+3. **Success state inside the dialog.** The title still reads "Enquire about {title}" after the send. Accepted (recorded, no change): it is the dialog's name, and the success `Alert` plus "Back to products" carry the message.
+4. **The catch-all `NotFoundPage` and Home have no `h1`.** Still open on purpose.
+
 ## Conflicts found
 
 1. **`server/src/config.ts` still enforces five ids** (`.length(5, ...)`). `docs/DECISIONS.md` says the count is not enforced and blank entries are ignored. Resolution: backend-builder removes the `.length(5)` pipe (keep split, trim, filter blanks) and updates `config.test.ts`. `ARCHITECTURE.md` now matches `DECISIONS.md`.
-2. **`design-system/contract.md` has no `description`** but `GET /products/:id` returns it (already in `DECISIONS.md`). Not an issue 13 blocker: the featured endpoint returns `Product` exactly as the contract defines it. Update `contract.md` in the product-page issue.
+2. **`design-system/contract.md` had no `description`** but `GET /products/:id` returns it. Resolved in issue 16: `contract.md` now defines `ProductDetail`.
 3. **`ProductGrid` contract says category chips come from loaded products** (`contract.md`), but the API serves `GET /categories`. Resolution for the category issue: the server list wins, the client does not derive categories. Not needed for issue 13.
 4. **Server `Product.id` is `string`, contract allows `string | number`.** Compatible: the server only emits strings.

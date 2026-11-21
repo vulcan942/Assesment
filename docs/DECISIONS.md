@@ -25,7 +25,7 @@
 - Featured list: `FEATURED_PRODUCT_IDS` is a comma-separated string of ids, split and trimmed once in config. It is required with no code default (fail fast; the list is config, not code). `.env.example` ships `1,2,3,4,5`. Changing it needs a restart only.
 - The count is not enforced: the endpoint returns whatever is configured, so "exactly five" in `.env.example` and `ARCHITECTURE.md` is a guideline, not a startup check. Blank entries are ignored. An empty list shows the empty state.
 - `react-router` is justified: it routes home, category, search and product pages.
-- Interim state: home cards and `Enquire` navigate to a NotFound page until the product page (#16) lands. `NotFoundPage` is a temporary placeholder.
+- Resolved in #16: home cards and `Enquire` now open the product page. `NotFoundPage` remains as the `*` catch-all.
 - CORS has no preflight handling yet; it is added with the enquiry POST (#17).
 - The server error handler logs `req.path` only. It must never log the enquiry body.
 - Unknown `/api` paths return a JSON 404.
@@ -59,6 +59,23 @@
 - Search (#15): the results `h1` shows the term as typed.
 - Search (#15): a 400 with `fields.q` shows a destructive Alert titled 'Search did not run' with the server's `q` message. Any other error, and a 400 without `fields.q`, keeps the generic 'Products did not load'.
 - Search (#15): the `renderTitle` helper is now repeated in the Home, Category and Search pages (3 times). Not extracted yet; revisit at the next use.
+- Product page (#16): `GET /products/:id` returns `Product` plus optional `description`; `rating` stays out of the wire shape. `description` is omitted when upstream has none. `design-system/contract.md` now defines `ProductDetail` (updated in the architect review); the client type is `ProductDetail` in `lib/api.ts`.
+- Product page (#16) architect review fixes: (a) `ARCHITECTURE.md` still planned the id schema as `min(1).max(32)`; it now says `z.string().trim().regex(/^[\w-]+$/).max(64)`, matching this file. (b) `ARCHITECTURE.md` still listed `ProductDetail` as "open decision 1" and `NotFoundPage` as the temporary `/products/:id` handler; both updated. (c) The id failure message is 'That product link is not valid.' in `fields.id`. (d) `EnquiryForm`'s success button is labelled "Back to products", so on the product page `onDone` navigates to `/` and `onCancel` closes the dialog; the earlier note implied only closing. (e) The not-found state is inline in `ProductPage` with product-specific copy ("We could not find that product."), because `NotFoundPage` says "This page does not exist." (f) `Enquire` on this page is a primary `Button`; cards keep secondary. No conflict with `challenge.md`, `PRODUCT.md` or the rules. Details in `docs/design-gaps.md` (issue 16).
+- Product page (#16): the route id must match `^[\w-]+$` and be at most 64 characters (this settles the `.`/`..` note above). Fake Store ids are digits, but the schema is not digits-only so a replacement provider with other id formats works.
+- Product page (#16): a malformed id (fails the schema) is a `400 validation_failed`; a well-formed id the provider does not know is a `404 not_found` with the generic message. The client shows the not-found page copy for both, since a person cannot tell them apart.
+- Product page (#16): the Fake Store adapter returns `null` for an unknown id (it answers an empty 200), and the service turns `null` into `NotFoundError`.
+- Product page (#16): `/products/featured` is registered before `/products/:id` so "featured" is not read as an id.
+- Product page (#16): the Enquire button opens a `Dialog` holding `EnquiryForm`, wired to the existing `sendEnquiry`. Until #17 adds `POST /enquiries` the form shows its honest "Enquiry not sent" error; it never reports success. #17 then adds server code only. Cards on home, category and search keep navigating to `/products/:id`.
+- Product page (#16): copy and display follow `ProductCard`. Image `alt` is the product title, with the "No image" placeholder when the image is missing or fails to load. The price line is omitted when `price` is missing; otherwise `formatPrice` (USD). A missing `description` hides that section; a missing category hides the category line.
+- Product page (#16): navigation is one "Back to products" link to `/` plus the category shown as a link to its category page when present. No breadcrumb component, no browser-history tricks.
+- Product page (#16): `document.title` is `{title} - Catalogue`; for not-found it is `Product not found - Catalogue`. Loading, error (with retry) and not-found are separate states, as on the other pages. The error state covers network and 5xx.
+- Product page (#16): the `/products/:id` placeholder pointing at `NotFoundPage` is replaced by the real `ProductPage` route. `NotFoundPage` stays as the `*` catch-all.
+- Product page (#16): the Fake Store adapter checks the id against `/^[\w-]+$/` and returns `null` if it fails, even though the route already validates the same pattern. This is deliberate defence in depth: the route is not the only possible caller of the provider, and `encodeURIComponent('..')` leaves `..` unchanged, so without the guard a dot-segment id could resolve outside `/products`.
+- Product page (#16): ids are not trimmed. A padded id such as ' 7 ' is a `400 validation_failed`, not silently read as `7`. A different string should not name the same product.
+- Product page (#16): the Enquire dialog calls `sendEnquiry`, which fails with 'Enquiry not sent' until #17 adds `POST /enquiries`. It never reports success.
+- Product page (#16): the image fallback (`useState`, `onError`, 'No image') is duplicated in `ProductCard` and `ProductPage`. Two uses; extract an `ImageWell` at a third.
+- Product page (#16): the page sets `document.title` in a passive effect (`useEffect`), so it changes after the render. Tests must `waitFor` the title instead of asserting it right after render. One earlier failure of that assertion did not reproduce in about 30 runs; this race is its root cause (found in code review).
+- Tailwind reminder (a recurring mistake): the Tailwind step here is 4px, so the design tokens `space-N` are not Tailwind step N. For example `space-5` (24px) is `gap-6` and `space-7` (48px) is `gap-12`; `gap-5` is 20px. Check the arithmetic against `tokens.json` before writing a spacing class.
 
 ## Dropped or simplified
 
@@ -76,3 +93,4 @@
 
 - Feature issues: featured products, category listing, search, product page, enquiry flow.
 - Record `docker compose up --build` time. Enquiry email landing in Mailpit is checked once the enquiry endpoint exists.
+

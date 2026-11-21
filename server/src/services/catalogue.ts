@@ -8,6 +8,7 @@ export interface CatalogueService {
   listCategories(): Promise<string[]>
   getCategoryPage(category: string): Promise<{ topRated: Product[]; products: Product[] }>
   search(term: string): Promise<Product[]>
+  getProduct(id: string): Promise<Product>
 }
 
 // Rating descending, unrated last, ties by id (numeric-aware so "2" sorts before "10").
@@ -37,6 +38,12 @@ export function createCatalogueService(deps: { provider: ProductProvider; featur
       return (await deps.provider.list()).filter(
         (p) => p.title.toLowerCase().includes(needle) || (p.description ?? '').toLowerCase().includes(needle),
       )
+    },
+
+    async getProduct(id) {
+      const product = await deps.provider.getById(id)
+      if (!product) throw new NotFoundError(`Unknown product "${id}"`)
+      return product
     },
 
     async getCategoryPage(category) {

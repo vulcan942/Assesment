@@ -33,6 +33,22 @@ describe('getFeatured', () => {
   })
 })
 
+describe('getProduct', () => {
+  const svc = (provider = fakeProductProvider(all)) => createCatalogueService({ provider, featuredIds: [] })
+
+  it('returns the product with that id', async () => {
+    expect((await svc().getProduct('2')).id).toBe('2')
+  })
+
+  it('throws NotFoundError when the provider has no such product', async () => {
+    await expect(svc().getProduct('99')).rejects.toBeInstanceOf(NotFoundError)
+  })
+
+  it('propagates an upstream error', async () => {
+    await expect(svc(fakeProductProvider(all, new UpstreamError('down'))).getProduct('1')).rejects.toBeInstanceOf(UpstreamError)
+  })
+})
+
 const rated = (id: string, rating?: number, category = 'men'): Product => ({ id, title: `Product ${id}`, category, rating })
 const page = (products: Product[], category = 'men') =>
   createCatalogueService({ provider: fakeProductProvider(products), featuredIds: [] }).getCategoryPage(category)

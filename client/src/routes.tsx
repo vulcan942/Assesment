@@ -3,6 +3,7 @@ import { RootLayout } from '@/components/RootLayout'
 import { NotFoundPage } from '@/pages/NotFoundPage'
 import { CategoryPage } from '@/pages/CategoryPage'
 import { HomePage } from '@/pages/HomePage'
+import { ProductPage } from '@/pages/ProductPage'
 import { SearchPage } from '@/pages/SearchPage'
 
 export const routes: RouteObject[] = [
@@ -12,7 +13,7 @@ export const routes: RouteObject[] = [
       { path: '/', element: <HomePage /> },
       { path: '/categories/:category', element: <CategoryPage /> },
       { path: '/search', element: <SearchPage /> },
-      // The product page does not exist yet; this stops links to it showing the router's default error screen.
+      { path: '/products/:id', element: <ProductPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],
   },
