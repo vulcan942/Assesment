@@ -174,6 +174,16 @@ Not blockers. Handled or recorded as follows.
 3. **Success state inside the dialog.** The title still reads "Enquire about {title}" after the send. Accepted (recorded, no change): it is the dialog's name, and the success `Alert` plus "Back to products" carry the message.
 4. **The catch-all `NotFoundPage` and Home have no `h1`.** Still open on purpose.
 
+## Issue 17 (enquiry and sales email)
+
+**Ruling: no new component.** `EnquiryForm` already has the thank-you state, the failure `Alert`, the honeypot and per-field `FieldError`. Three small changes to the existing form and `lib/`, all composing parts already there.
+
+1. **Server field errors. Compose: reuse `FieldError`.** On a 400 with `fields`, show each message beside its input through the existing `FieldError`, `aria-invalid` and `aria-describedby`, and focus the first invalid field (same order as client validation). Gap found: the form has no error slot for `phone`, which the server can reject. Add `phone` to the `Field` type, `FIELD_ORDER` (name, email, phone, message), a `phoneRef` and a `FieldError`. No new component, no change to the "Phone (optional)" label. If none of the returned fields is visible (for example `product`), show the failure alert instead.
+2. **Failure and 429 message. Compose: existing destructive `Alert`, same place** (above the buttons, inside the form; it already announces itself with `role="alert"`). Title stays "Enquiry not sent". The description is the server's message for 429 ("You have sent several enquiries. Try again in a few minutes."), 413 and `enquiry_not_sent` ("We could not send your enquiry. Try again in a moment."); every other failure keeps "Your enquiry was not sent. Check your connection and try again." (from the design README). A rate-limited customer sees a message that says what happened and what to do, which the generic "check your connection" would not.
+3. **How the form learns the message. Keep it delivery-agnostic.** `contract.md` says `onSubmit` rejects when delivery fails and the form knows nothing about the provider. The form must not import `ApiError` or `api.ts`. Add `EnquiryError { fields?: Record<string, string>; message?: string }` to `lib/enquiry.ts`; `sendEnquiry` converts the API error into it; the form checks `instanceof EnquiryError` only. Any other rejection is the generic failure. Add one sentence to the `contract.md` `onSubmit` paragraph: "A rejection may be an `EnquiryError` carrying `fields` or a `message` to show." No other design-system change.
+4. **Thank-you state. No change.** "Enquiry sent" with "Thank you. We will reply by email." and "Back to products" already meets "the customer will see a Thank you message". Success is shown only after `onSubmit` resolves, which the server does only after the email was handed to the mailer.
+5. **Not needed:** a toast, a rate-limit page, a spinner component (the button already reads "Sending…" and is disabled), a captcha. The honeypot stays hidden and `aria-hidden`.
+
 ## Conflicts found
 
 1. **`server/src/config.ts` still enforces five ids** (`.length(5, ...)`). `docs/DECISIONS.md` says the count is not enforced and blank entries are ignored. Resolution: backend-builder removes the `.length(5)` pipe (keep split, trim, filter blanks) and updates `config.test.ts`. `ARCHITECTURE.md` now matches `DECISIONS.md`.

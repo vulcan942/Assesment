@@ -50,4 +50,4 @@ interface EnquiryPayload {
 }
 ```
 
-`onSubmit(payload)` must return or resolve when the enquiry has been delivered and throw or reject when it has not. Everything provider-specific (API key, template, recipient, endpoint) lives inside that function, ideally behind a server route so keys never reach the browser. Changing the email provider changes only that function.
+`onSubmit(payload)` must return or resolve when the enquiry has been delivered and throw or reject when it has not. Everything provider-specific (API key, template, recipient, endpoint) lives inside that function, ideally behind a server route so keys never reach the browser. Changing the email provider changes only that function. A rejection may be an `EnquiryError` carrying `fields` or a `message` to show.

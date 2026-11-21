@@ -17,7 +17,7 @@ docker compose up --build
 ```
 
 - App: http://localhost:8080
-- Caught enquiry emails: http://localhost:8025
+- Sales email: send an enquiry from a product page, then open Mailpit at http://localhost:8025 to see it (nothing leaves your machine)
 - Stop: `docker compose down`
 
 ## Configuration
@@ -34,7 +34,13 @@ cd server && npm run dev
 cd client && npm run dev
 ```
 
-Set the variables from `.env.example` in your shell for the server.
+Set the variables from `.env.example` in your shell for the server. The server needs an SMTP catcher at `SMTP_HOST:SMTP_PORT` to send enquiries. `docker compose` does not publish port 1025 to the host, so start Mailpit yourself:
+
+```sh
+docker run -p 1025:1025 -p 8025:8025 axllent/mailpit
+```
+
+The sales email then appears at http://localhost:8025.
 
 ## Checks
 

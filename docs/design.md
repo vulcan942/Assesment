@@ -2,7 +2,7 @@
 
 UI design for the catalogue PoC. Built only from `design-system/` components and the rulings in `docs/design-gaps.md`. Token names only; no raw colours, sizes or fonts.
 
-Scope of this version: **issue 13 (home, featured products)**, **issue 14 (category nav and category page)**, **issue 15 (search bar and results page)** and **issue 16 (product page with the enquiry dialog)**. Other screens are added by later issues.
+Scope of this version: **issue 13 (home, featured products)**, **issue 14 (category nav and category page)**, **issue 15 (search bar and results page)**, **issue 16 (product page with the enquiry dialog)** and **issue 17 (enquiry form final state, server errors, sales email)**. Other screens are added by later issues.
 
 | Screen | Route | Status |
 | --- | --- | --- |
@@ -10,7 +10,7 @@ Scope of this version: **issue 13 (home, featured products)**, **issue 14 (categ
 | Category | `/categories/:category` | Designed below |
 | Search results | `/search?q=` | Designed below (with the search bar) |
 | Product detail | `/products/:id` | Designed below (Product page) |
-| Enquiry form and thank-you | dialog on the product page | Designed below (Product page, enquiry dialog). Sending needs `POST /enquiries` from #17; until then the failure state shows. |
+| Enquiry form and thank-you | dialog on the product page | Designed below (Product page, then "Enquiry form (issue 17, final state)"). Sends through `POST /api/enquiries` (#17). |
 | Not found (catch-all) | `*` | Designed below |
 
 ## App layout (shared by every page)
@@ -442,7 +442,7 @@ ProductPage
           DialogTrigger asChild > Button "Enquire"    primary, one per page
           DialogContent
             DialogHeader (right padding space-7 so the title clears the close button) > DialogTitle   "Enquire about {title}"
-            EnquiryForm(product, onSubmit=sendEnquiry, onCancel=close dialog, onDone=navigate to "/")
+            EnquiryForm(product, onSubmit=sendEnquiry, onCancel=close dialog, onDone=navigate to "/")   see "Enquiry form (issue 17, final state)"
   status "loading":
     div role="status" aria-busy="true" aria-label="Loading product"
       same two-column block with placeholders (no Link, no text)
@@ -487,18 +487,108 @@ Breakpoints 600px and 960px only.
 | Error | Back link is not shown. `Alert` destructive with the alert glyph, title "Product did not load", body "Check your connection and try again.", then a secondary `Button` "Try again" below it. Announced with `role="alert"`. "Try again" returns to loading and calls `getProduct(id)` again. `document.title` `Catalogue`. |
 | Not found | `h1` "We could not find that product." (`t-heading-lg`), body `p` "It may have been removed. Browse the catalogue to find something else." (`t-body`, `ink`), link "Go to the catalogue" underlined, to `/`. Header nav and search stay as other ways out. `document.title` "Product not found - Catalogue". |
 
-### Enquire dialog states
+### Enquiry form (issue 17, final state)
 
-The dialog is `EnquiryForm` as built; this section only states what the person sees.
+No new component. `EnquiryForm(product, onSubmit, onDone, onCancel)` inside the product page `Dialog`; it takes only `Product` and an injected `onSubmit`. `sendEnquiry` (in `api.ts`) rejects with an `EnquiryError { fields?, message? }` (from `lib/enquiry.ts`) for a 400 with `fields` and for the 429, 413 and `enquiry_not_sent` responses; any other rejection is a plain failure. The form checks `instanceof EnquiryError` only and never imports `ApiError`.
+
+```
+EnquiryForm(product, onSubmit, onDone, onCancel)
+  status "idle" | "sending" | "error":
+    form noValidate aria-busy={sending}
+      product summary                              surface-muted, radius-md, space-4 padding
+      Field name      Label "Your name"            Input type=text   name=name  autoComplete=name   aria-required
+        FieldError id=enquiry-name-error
+      Field email     Label "Email"                Input type=email  name=email autoComplete=email  aria-required
+        FieldError id=enquiry-email-error
+      Field phone     Label "Phone (optional)"     Input type=tel    name=phone autoComplete=tel inputMode=tel
+        FieldError id=enquiry-phone-error          (new in #17)
+      Field message   Label "Message"              Textarea name=message  aria-required  defaultValue "I am interested in {title}."
+        FieldError id=enquiry-message-error
+      honeypot div (hidden)                        label "Website" > input name=website
+      [status "error"]  Alert variant="destructive" > AlertCircle + AlertTitle + AlertDescription
+      div (button row)  Button secondary "Cancel", Button primary type=submit "Send enquiry" | "Sending…"
+  status "success":
+    Alert variant="success" > CircleCheck + AlertTitle + AlertDescription
+    Button primary "Back to products"
+```
+
+`Field` here is the `div` stack the form already uses (`Label`, control, `FieldError`, `space-1` apart), not the design-system `Field` component.
+
+#### Fields
+
+| Field | Label | Required | Control | Attributes | Hint |
+| --- | --- | --- | --- | --- | --- |
+| Name | Your name | Yes | `Input` | `type="text"`, `name="name"`, `autoComplete="name"`, `aria-required="true"` | None |
+| Email | Email | Yes | `Input` | `type="email"`, `name="email"`, `autoComplete="email"`, `aria-required="true"` | None |
+| Phone | Phone (optional) | No | `Input` | `type="tel"`, `inputMode="tel"`, `name="phone"`, `autoComplete="tel"` | None |
+| Message | Message | Yes | `Textarea` | `name="message"`, `aria-required="true"`, prefilled "I am interested in {title}.", no `autoComplete` | None |
+
+- Required marking: the exception is marked, not the rule. Optional is shown in the label as "(optional)" in `ink-muted`; required fields carry no asterisk or word, and are announced as required through `aria-required`. No native `required` attribute (the form is `noValidate`, so the browser's own bubble never replaces our message).
+- Every field has a visible `Label` (`t-label`), `space-1` above its control. Never placeholder-only; there are no placeholders.
+- Control text is `t-body` (16px, so mobile browsers do not zoom), at least `touch-target` (44px) tall, `surface` fill, `border-control` border, `radius-md`, `space-3` padding. The message `Textarea` is at least `touch-target` tall and grows with its text.
+- Fields keep the user's text through validation errors, sending and failure.
+- No hints: the labels say enough and the field errors give instructions. No character counter.
+- Focus on every control is a 2px `focus` outline with 2px offset, never removed.
+
+#### Honeypot
+
+- Field `name="website"`, label "Website", wrapper `aria-hidden="true"`, input `tabIndex={-1}` and `autoComplete="off"`, moved off screen (not `display: none`, which bots skip). It adds no tab stop and no screen-reader content, takes no space and causes no horizontal scroll in the dialog.
+- Not validated, never shown an error. The form sends `website` only when it is non-empty; the server's honeypot check then answers `201` without sending mail, and that `201` decides success (the form does not short-circuit). A person never sees it.
+- `EnquiryPayload` has an optional `website` for this. The markup is a raw label and input with a raw off-screen offset on purpose: it is hidden from everyone and is not a design measurement.
+
+#### States
 
 | State | What the user sees |
 | --- | --- |
-| Closed | Page as ready. Focus is on `Enquire` after any close. |
-| Idle | `DialogTitle` "Enquire about {title}". Product summary on `surface-muted` (`radius-md`, `space-4` padding): title (`t-label`), category (`t-caption`, `ink-muted`), price (`t-price`). Fields in a stack with gap `space-4`: "Your name", "Email", "Phone (optional)", "Message" (prefilled "I am interested in {title}."). Each has a visible `Label`, `space-1` to its field, 16px text, at least `touch-target` tall, `border-control` border. Buttons: "Cancel" (secondary) and "Send enquiry" (primary). Below 600px they stack, "Send enquiry" on top; from 600px they sit in one row, right aligned, `space-2` apart. |
-| Validation | On submit, empty name, invalid email or empty message shows an instruction under that field in `danger`, `t-body-sm`, with the alert glyph, field border `danger`, `aria-invalid` and `aria-describedby` on the field. Focus moves to the first invalid field. Nothing is sent. Messages: "Enter your name.", "Enter a valid email address.", "Enter a message." Phone is never invalid. |
-| Sending | "Send enquiry" reads "Sending…" and both buttons are disabled (`surface-muted` fill, `ink-muted` text). No spinner, no animation. Fields keep their values. |
-| Failure | `Alert` destructive above the buttons, title "Enquiry not sent", body "Your enquiry was not sent. Check your connection and try again." Fields keep their values and the buttons are enabled again. Until #17 adds `POST /enquiries`, every submit that passes validation ends here; the form never reports success unless the send resolved. |
-| Success | The form is replaced by an `Alert` success with the check glyph, title "Enquiry sent", body "Thank you. We will reply by email.", and a primary `Button` "Back to products" that calls `onDone` and navigates to `/`. The dialog title stays "Enquire about {title}" and the close button still works; closing leaves the person on the product page, which is accepted. |
+| Closed | Page as ready. Focus returns to `Enquire` after any close (Radix). |
+| Idle | `DialogTitle` "Enquire about {title}". Product summary on `surface-muted`: title (`t-label`), category (`t-caption`, `ink-muted`), price (`t-price`). Fields in a stack, gap `space-4`. Buttons "Cancel" (secondary) and "Send enquiry" (primary). Focus lands on the first field when it opens. |
+| Validation, client | On submit, an empty or whitespace name, an email that is not `x@y.z` shaped, or an empty message shows an instruction under that field in `danger`, `t-body-sm`, with the alert glyph (so not colour alone), field border `danger`. The field gets `aria-invalid="true"` and `aria-describedby` set to the message id. Nothing is sent. Focus moves to the first invalid field in order name, email, phone, message. There is no summary list: with at most four fields the message sits right under each one and the focused field's description is read with it. Phone is never invalid on the client. |
+| Validation, server | A 400 with `fields` is shown the same way, under the matching field, with the server's own text (for example "Use digits, spaces and + - ( ) only." under phone, "Use 2000 characters or fewer." under message, "Enter your name on one line." under name). Focus moves to the first of those fields in the same order. Fields that are fine show nothing. The form stays on screen with the user's text. |
+| Server field not shown | If the server returns a key the form has no slot for (`product`, or any unknown key), it is not shown inline. If at least one visible field came back with it, the inline errors win and no alert shows. If none did, the failure alert shows with the generic text (the server's "Check the highlighted fields." is not used: nothing is highlighted). |
+| Error cleared | The inline errors and the failure alert clear on the next submit. A failed send followed by an invalid resubmit clears the old alert, so it never shows beside new inline errors. Editing a field does not clear its error on its own (no live validation). |
+| Sending | `form aria-busy="true"`. "Send enquiry" reads "Sending…" and both buttons are `disabled` (`surface-muted` fill, `ink-muted` text). A second submit (button, Enter in a field) is ignored while sending, so one click sends one request. Fields keep their values. No spinner, no animation. |
+| Failure | See the failure table below. The destructive `Alert` sits inside the form, below the message field and above the buttons, so it stays next to the button the person presses again. `role="alert"` (stock for `destructive`), so it is announced when it appears. Fields keep their values and both buttons are enabled again. Focus returns to "Send enquiry" (the disabled button lost it), so a keyboard user can press it again or Shift+Tab to the fields. |
+| Success | The form is replaced by an `Alert` success with the check glyph (`role="status"`, stock), title "Enquiry sent", body "Thank you. We will reply by email.", and a primary `Button` "Back to products" that calls `onDone` and navigates to `/`. Focus moves to "Back to products" (the focused control was removed with the form, so it must be placed) and the button is described by the alert text through `aria-describedby`. The dialog title stays "Enquire about {title}"; it is the dialog's name, and the alert and button carry the message. The close button and `Escape` still work and leave the person on the product page; accepted. Success is shown only after `onSubmit` resolved, that is, after the server's `201` (also the answer to a honeypot hit). |
+
+#### Failure alert copy
+
+Title is always "Enquiry not sent". The body is the server's message when the rejection is an `EnquiryError` with a `message`, shown as given (the client does not rewrite or translate it); otherwise the generic text. Every body says what happened and what to do.
+
+| Cause | Source | Body |
+| --- | --- | --- |
+| Network down, timeout, 5xx other than `enquiry_not_sent`, anything unexpected | Generic | Your enquiry was not sent. Check your connection and try again. |
+| 404 unknown product | Client message | We could not find that product. Go back to the catalogue and try again. |
+| 429 rate limited | Server message | You have sent several enquiries. Try again in a few minutes. |
+| 502 `enquiry_not_sent` (mail not delivered) | Server message | We could not send your enquiry. Try again in a moment. |
+| 413 payload too large | Server message | That enquiry is too large. Shorten your message and try again. |
+| 400 with only fields the form does not show | Generic | Your enquiry was not sent. Check your connection and try again. |
+
+- The generic body mentions the connection, which is wrong for a 400 on `product`, but the person can only retry and that case cannot be fixed from the form; accepted. A 404 has its own message (above) because the connection is fine.
+- No countdown or `Retry-After` is shown; "a few minutes" is enough.
+- The failure is not a toast and not a page; nothing in the dialog is replaced.
+
+#### Dialog behaviour
+
+- Keyboard: focus lands on the first field when the dialog opens. Tab order is name, email, phone, message, Cancel, Send enquiry, then the close button, which comes after the content (better for a form dialog). Focus is trapped; Shift+Tab from the first field wraps to the close button. Enter in a single-line field submits; Enter in the message adds a new line. The honeypot is never reached.
+- `Escape`, the close button, a click on the scrim and "Cancel" all close the dialog and return focus to `Enquire`. Unsent text is dropped (the form unmounts); no confirm step. Cancel is disabled while sending, but the other three still close the dialog; the request completes regardless and a resubmit is limited by the server's rate limit. Accepted for the PoC.
+- A closed dialog opens with a fresh form (idle, prefilled message), so a past failure or success never shows on the next open.
+- Content taller than the viewport scrolls inside the dialog (stock `max-h` and `overflow-y-auto`); focusing an invalid field scrolls it into view.
+
+#### Responsive
+
+Breakpoints 600px and 960px only; the form changes only at 600px.
+
+| Width | Layout |
+| --- | --- |
+| Below 600px | Dialog fills the width less the stock edge margin. Fields, alert and buttons are full width and stacked; "Send enquiry" on top, "Cancel" under it, `space-2` apart. Each button at least `touch-target` tall. Error and alert text wrap. |
+| 600px and up (including 960px and up) | Dialog at its stock maximum width, centred. Buttons in one row, right aligned, `space-2` apart, "Cancel" left of "Send enquiry". Fields stay one column, full width of the dialog. |
+
+#### Accessibility
+
+- Labels are real `<label for>` elements. Errors use `aria-invalid` and `aria-describedby` only while an error shows; both are removed when it clears, so no reference dangles.
+- Failure is announced by `role="alert"`, success by `role="status"` plus focus on the button; sending is exposed through `aria-busy` on the form and the changed button label.
+- State is never colour alone: glyph, title and words on every error and alert. Error text is `danger` on `surface` (4.5:1), borders `border-control` or `danger`.
+- The dialog is a Radix `dialog` named by `DialogTitle`, with focus trap and `Escape`.
 
 ### Responsive and a11y notes
 
@@ -531,9 +621,14 @@ Sentence case, plain, no exclamation marks, no emoji, no sales words.
 | Dialog title | Enquire about {title} |
 | Field labels | Your name, Email, Phone (optional), Message |
 | Prefilled message | I am interested in {title}. |
-| Validation | Enter your name. / Enter a valid email address. / Enter a message. |
+| Validation (client) | Enter your name. / Enter a valid email address. / Enter a message. (phone has no client message) |
 | Dialog buttons | Cancel, Send enquiry, Sending… |
-| Failure title and body | Enquiry not sent. Your enquiry was not sent. Check your connection and try again. |
+| Failure title | Enquiry not sent |
+| Failure body, generic | Your enquiry was not sent. Check your connection and try again. |
+| Failure body, 429 (server message) | You have sent several enquiries. Try again in a few minutes. |
+| Failure body, 502 (server message) | We could not send your enquiry. Try again in a moment. |
+| Failure body, 413 (server message) | That enquiry is too large. Shorten your message and try again. |
+| Server field messages | Shown as the server gives them, for example "Use digits, spaces and + - ( ) only." |
 | Success title and body | Enquiry sent. Thank you. We will reply by email. |
 | Success button | Back to products |
 | Document titles | {title} - Catalogue; Product not found - Catalogue |
